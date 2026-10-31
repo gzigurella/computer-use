@@ -44,6 +44,16 @@ This default artifact contains only the supported Hyprland implementation. To in
 
 This emits a static-PIE binary under `target/x86_64-unknown-linux-musl/release/` with no ELF `DT_NEEDED` entries. The supported native Hyprland route implements capture, pointer and keyboard input, clipboard, compositor IPC, and the AT-SPI2 client in-process. It still uses the desktop accessibility bus and the applications' toolkit bridges. Fallback backends may use host desktop helpers; see [DEPENDENCY-BOM.md](DEPENDENCY-BOM.md).
 
+For Codex on a systemd-managed Hyprland session, `scripts/computer-use-mcp.sh` imports the desktop session variables and starts the static x86_64 server. Add it to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.computer_use_linux]
+command = "/path/to/computer-use/scripts/computer-use-mcp.sh"
+args = []
+```
+
+Set `COMPUTER_USE_LINUX_BINARY` in that MCP entry's `env` table to use a server binary at another path or architecture.
+
 ## Verify
 
 Run the unit tests, the X11 smoke test on a disposable X server, and the Wayland
