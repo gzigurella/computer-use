@@ -223,10 +223,10 @@ def run(binary):
         modern_session_id = modern_started_metadata.get("session_id")
         if not modern_session_id or modern_started_metadata.get("active_backend") != "hyprland-native":
             raise RuntimeError(f"modern HTTP computer_start failed: {modern_started}")
-        if modern_started_metadata.get("capabilities", {}).get("native_cursor_hidden") is not True:
-            raise RuntimeError("modern HTTP start did not report the single-output native cursor suppression")
-        if cursor_invisible() is not True:
-            raise RuntimeError("modern HTTP start did not hide Hyprland's native cursor")
+        if modern_started_metadata.get("capabilities", {}).get("native_cursor_hidden") is not original_cursor_invisible:
+            raise RuntimeError("modern HTTP start changed native cursor visibility")
+        if cursor_invisible() is not original_cursor_invisible:
+            raise RuntimeError("modern HTTP start changed Hyprland's native cursor visibility")
         session_id = modern_session_id
         modern_observed = modern_tool("computer_observe", {"session_id": modern_session_id})
         modern_observation = modern_observed.get("structuredContent", {})
@@ -266,17 +266,17 @@ def run(binary):
         capabilities = started.get("capabilities", {})
         if started.get("active_backend") != "hyprland-native" or not started.get("capture_validated"):
             raise RuntimeError(f"HTTP computer_start did not validate native capture: {started}")
-        if started.get("capabilities", {}).get("native_cursor_hidden") is not True:
-            raise RuntimeError("HTTP start did not report the single-output native cursor suppression")
-        if cursor_invisible() is not True:
-            raise RuntimeError("HTTP start did not hide Hyprland's native cursor")
+        if started.get("capabilities", {}).get("native_cursor_hidden") is not original_cursor_invisible:
+            raise RuntimeError("HTTP start changed native cursor visibility")
+        if cursor_invisible() is not original_cursor_invisible:
+            raise RuntimeError("HTTP start changed Hyprland's native cursor visibility")
         if not capabilities.get("screenshot") or not capabilities.get("pointer_input"):
             raise RuntimeError(f"HTTP computer_start omitted core desktop capabilities: {capabilities}")
         observed = client.tool("computer_observe", {"session_id": session_id})
         if not observed.get("observation_id") or observed.get("capabilities", {}).get("visual_pointer_overlay") is not True:
             raise RuntimeError(f"HTTP computer_observe returned incomplete session metadata: {observed}")
-        if observed.get("capabilities", {}).get("native_cursor_hidden") is not True:
-            raise RuntimeError("HTTP observe did not report the hidden native cursor state")
+        if observed.get("capabilities", {}).get("native_cursor_hidden") is not original_cursor_invisible:
+            raise RuntimeError("HTTP observe reported changed native cursor visibility")
         if client.tool("computer_stop", {"session_id": session_id}).get("closed") is not True:
             raise RuntimeError("HTTP computer_stop did not close the session")
         session_id = None
@@ -312,10 +312,10 @@ def run(binary):
     crash_client = McpHttpProcess(binary)
     try:
         crash_started = crash_client.tool("computer_start", {"overlay_monitor": active[0]})
-        if crash_started.get("capabilities", {}).get("native_cursor_hidden") is not True:
-            raise RuntimeError("crash-recovery start did not enable the native cursor overlay")
-        if cursor_invisible() is not True:
-            raise RuntimeError("crash-recovery start did not hide Hyprland's native cursor")
+        if crash_started.get("capabilities", {}).get("native_cursor_hidden") is not original_cursor_invisible:
+            raise RuntimeError("crash-recovery start changed native cursor visibility")
+        if cursor_invisible() is not original_cursor_invisible:
+            raise RuntimeError("crash-recovery start changed Hyprland's native cursor visibility")
         crash_client.kill()
         wait_for_cursor_visibility(original_cursor_invisible)
     finally:

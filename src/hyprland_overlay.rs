@@ -51,7 +51,6 @@ struct ParentDeathCursorRestore {
 struct OverlayCursorVisibility {
     previous: Option<bool>,
     current: Option<bool>,
-    last_failure: Option<Instant>,
 }
 
 impl OverlayCursorVisibility {
@@ -59,44 +58,19 @@ impl OverlayCursorVisibility {
         Self {
             previous,
             current: previous,
-            last_failure: None,
         }
     }
 
-    fn update(&mut self, pointer_on_overlay_monitor: bool) {
-        let Some(previous) = self.previous else {
-            return;
-        };
-        let hidden = previous || pointer_on_overlay_monitor;
-        if self.current == Some(hidden) {
-            return;
-        }
-        if self
-            .last_failure
-            .is_some_and(|at| at.elapsed() < Duration::from_millis(250))
-        {
-            return;
-        }
-        match crate::set_hyprland_cursor_invisible(hidden) {
-            Ok(()) => {
-                self.current = Some(hidden);
-                self.last_failure = None;
-            }
-            Err(error) => {
-                self.last_failure = Some(Instant::now());
-                eprintln!(
-                    "computer-use-linux: failed to update Hyprland cursor visibility: {error}"
-                );
-            }
-        }
+    fn update(&mut self, _pointer_on_overlay_monitor: bool) {
+        // The AI overlay may coexist with the user's native cursor; never hide it.
     }
 }
 
 impl Drop for OverlayCursorVisibility {
     fn drop(&mut self) {
-        if let Some(previous) = self.previous
-            && self.current != Some(previous)
-            && let Err(error) = crate::set_hyprland_cursor_invisible(previous)
+        if self.previous == Some(false)
+            && self.current == Some(true)
+            && let Err(error) = crate::set_hyprland_cursor_invisible(false)
         {
             eprintln!(
                 "computer-use-linux: overlay could not restore Hyprland cursor visibility: {error}"
@@ -123,8 +97,8 @@ impl Drop for ParentDeathCursorRestore {
     fn drop(&mut self) {
         let parent_died = parent_process_has_exited(self.parent_pid);
         if parent_died
-            && let Some(previous) = self.previous_visibility
-            && let Err(error) = crate::set_hyprland_cursor_invisible(previous)
+            && self.previous_visibility == Some(false)
+            && let Err(error) = crate::set_hyprland_cursor_invisible(false)
         {
             eprintln!(
                 "computer-use-linux: overlay could not restore cursor visibility after server exit: {error}"
@@ -382,8 +356,8 @@ impl NativeCursorVisibility {
     }
 
     fn restore(&mut self) -> Result<(), String> {
-        if current_cursor_invisible()? != self.previous {
-            crate::set_hyprland_cursor_invisible(self.previous)?;
+        if !self.previous && current_cursor_invisible()? {
+            crate::set_hyprland_cursor_invisible(false)?;
         }
         Ok(())
     }
@@ -392,8 +366,9 @@ impl NativeCursorVisibility {
 fn abort_overlay_startup(child: &mut Child, restore_cursor: Option<bool>) {
     let _ = child.kill();
     let _ = child.wait();
-    if let Some(previous) = restore_cursor
-        && let Err(error) = crate::set_hyprland_cursor_invisible(previous)
+    if restore_cursor == Some(false)
+        && current_cursor_invisible().unwrap_or(false)
+        && let Err(error) = crate::set_hyprland_cursor_invisible(false)
     {
         eprintln!(
             "computer-use-linux: failed to restore Hyprland cursor after overlay startup failure: {error}"

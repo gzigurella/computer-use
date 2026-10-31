@@ -2913,9 +2913,9 @@ async fn start_session(args: &Value, state: SharedState) -> Result<Value, String
         (notes.as_array_mut(), pointer_overlay_monitor.as_deref())
     {
         notes.push(json!(if native_cursor_hidden {
-            format!("The click-through mouse-arrow overlay is active on {overlay_monitor}; Hyprland's native cursor is currently hidden. When it was visible before the session, it is hidden only while the pointer is on this output; the prior setting is restored when the session stops.")
+            format!("The click-through AI mouse-arrow overlay is active on {overlay_monitor}; Hyprland reports the native cursor as hidden. Computer Use never changes native cursor visibility.")
         } else {
-            format!("The click-through mouse-arrow overlay is active on {overlay_monitor}; Hyprland's native cursor is currently visible. When it was visible before the session, it is hidden while the pointer is on this output; the prior setting is restored when the session stops.")
+            format!("The click-through AI mouse-arrow overlay is active on {overlay_monitor}; the native cursor stays visible and may overlap the AI pointer.")
         }));
     } else if info["capabilities"]["hyprland_adapter"] == true
         && info["capabilities"]["visual_pointer_overlay"] != true

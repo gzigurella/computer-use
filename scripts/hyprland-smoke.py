@@ -417,7 +417,7 @@ def check_overlay_child_death(binary, monitor):
             if item["name"] == monitor
         )
         pointer = json.loads(subprocess.check_output(["hyprctl", "cursorpos", "-j"], text=True))
-        expected_hidden = previous_cursor_invisible or output_contains(selected_monitor, (pointer["x"], pointer["y"]))
+        expected_hidden = previous_cursor_invisible
         if observation.get("capabilities", {}).get("native_cursor_hidden") is not expected_hidden:
             raise RuntimeError(
                 f"restarted overlay reported the wrong native cursor visibility: "
@@ -776,7 +776,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                 raise RuntimeError(f"native mouse-arrow overlay is unavailable: {metadata.get('capabilities')}")
             initial_pointer = json.loads(subprocess.check_output(["hyprctl", "cursorpos", "-j"], text=True))
             pointer_on_selected_output = output_contains(target_monitor, (initial_pointer["x"], initial_pointer["y"]))
-            expected_hidden = original_cursor_invisible or pointer_on_selected_output
+            expected_hidden = original_cursor_invisible
             if metadata.get("capabilities", {}).get("native_cursor_hidden") is not expected_hidden:
                 raise RuntimeError(f"native cursor state does not match the selected output and initial pointer: {metadata['capabilities']}")
             wait_cursor_visibility(expected_hidden)
