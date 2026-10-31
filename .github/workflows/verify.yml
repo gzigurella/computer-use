@@ -1,0 +1,65 @@
+name: Verify Linux desktop backends
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: '23 5 * * 1'
+
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+      - name: Audit server dependencies
+        run: cargo audit --file Cargo.lock
+  desktop:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Verify CycloneDX dependency BOM
+        run: python3 scripts/generate-dependency-bom.py --check
+      - name: Install desktop test dependencies
+        run: sudo apt-get update && sudo apt-get install --yes dbus-daemon gir1.2-gtk-4.0 foot grim imagemagick libxtst6 musl-tools python3-gi sway wlr-randr wtype xvfb
+      - name: Run default Hyprland-only unit tests
+        run: cargo test --locked --bin computer-use-linux
+      - name: Run unit tests for experimental backends
+        run: dbus-run-session -- cargo test --locked --all-features --bin computer-use-linux
+      - name: Check the default Hyprland-only build
+        run: cargo check --locked --bin computer-use-linux
+      - name: Build release server with experimental backends for smoke tests
+        run: cargo build --locked --release --features backend-x11,backend-sway,backend-portal --bin computer-use-linux
+      - name: Exercise X11 capture and input under Xvfb
+        run: xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' python3 scripts/x11-smoke.py target/release/computer-use-linux
+      - name: Exercise Wayland capture and input under headless Sway
+        run: dbus-run-session -- python3 scripts/wayland-smoke.py target/release/computer-use-linux
+
+  hyprland:
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Hyprland smoke dependencies
+        run: sudo apt-get update && sudo apt-get install --yes at-spi2-core dbus-daemon gir1.2-gtk-4.0 grim hyprland imagemagick musl-tools python3-gi python3-pyside6.qtwidgets wl-clipboard
+      - name: Build and verify static Hyprland release
+        run: |
+          rustup target add x86_64-unknown-linux-musl
+          cargo build --locked --release --target x86_64-unknown-linux-musl --bin computer-use-linux
+          binary=target/x86_64-unknown-linux-musl/release/computer-use-linux
+          if readelf -d "$binary" | grep -Eq '\((NEEDED|RPATH|RUNPATH)\)'; then
+            echo "static release has dynamic library dependencies"
+            exit 1
+          fi
+          if readelf -l "$binary" | grep -q INTERP; then
+            echo "static release has an ELF interpreter"
+            exit 1
+          fi
+      - name: Exercise static Hyprland path with mixed-scale output
+        run: dbus-run-session -- bash scripts/hyprland-ci.sh target/x86_64-unknown-linux-musl/release/computer-use-linux
+      - name: Exercise Qt 6 accessibility and input on static Hyprland path
+        run: dbus-run-session -- bash scripts/hyprland-ci.sh target/x86_64-unknown-linux-musl/release/computer-use-linux --qt
