@@ -530,15 +530,13 @@ impl EisInput {
                     4 => {
                         if let Some(seat) =
                             NonNull::new(unsafe { (self.api.event_seat)(event.as_ptr()) })
-                        {
-                            if let Some(index) = self
+                            && let Some(index) = self
                                 .seats
                                 .iter()
                                 .position(|item| item.as_ptr() == seat.as_ptr())
-                            {
-                                unsafe {
-                                    (self.api.seat_unref)(self.seats.swap_remove(index).as_ptr());
-                                }
+                        {
+                            unsafe {
+                                (self.api.seat_unref)(self.seats.swap_remove(index).as_ptr());
                             }
                         }
                     }
@@ -555,48 +553,42 @@ impl EisInput {
                     6 => {
                         if let Some(device) =
                             NonNull::new(unsafe { (self.api.event_device)(event.as_ptr()) })
-                        {
-                            if let Some(index) = self
+                            && let Some(index) = self
                                 .devices
                                 .iter()
                                 .position(|item| item.ptr.as_ptr() == device.as_ptr())
-                            {
-                                unsafe {
-                                    (self.api.device_unref)(
-                                        self.devices.swap_remove(index).ptr.as_ptr(),
-                                    );
-                                }
+                        {
+                            unsafe {
+                                (self.api.device_unref)(
+                                    self.devices.swap_remove(index).ptr.as_ptr(),
+                                );
                             }
                         }
                     }
                     7 => {
                         if let Some(device) =
                             NonNull::new(unsafe { (self.api.event_device)(event.as_ptr()) })
-                        {
-                            if let Some(item) = self
+                            && let Some(item) = self
                                 .devices
                                 .iter_mut()
                                 .find(|item| item.ptr.as_ptr() == device.as_ptr())
-                            {
-                                item.resumed = false;
-                            }
+                        {
+                            item.resumed = false;
                         }
                     }
                     8 => {
                         if let Some(device) =
                             NonNull::new(unsafe { (self.api.event_device)(event.as_ptr()) })
-                        {
-                            if let Some(item) = self
+                            && let Some(item) = self
                                 .devices
                                 .iter_mut()
                                 .find(|item| item.ptr.as_ptr() == device.as_ptr())
-                            {
-                                self.sequence = self.sequence.wrapping_add(1).max(1);
-                                unsafe {
-                                    (self.api.start_emulating)(device.as_ptr(), self.sequence);
-                                }
-                                item.resumed = true;
+                        {
+                            self.sequence = self.sequence.wrapping_add(1).max(1);
+                            unsafe {
+                                (self.api.start_emulating)(device.as_ptr(), self.sequence);
                             }
+                            item.resumed = true;
                         }
                     }
                     _ => {}

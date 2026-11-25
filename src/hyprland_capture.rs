@@ -490,7 +490,7 @@ fn resize_rgb_area(
             let row = raw
                 .get(row_start..row_start + width as usize * 4)
                 .ok_or("screencopy frame is truncated")?;
-            for pixel in row.chunks_exact(4) {
+            for pixel in row.as_chunks::<4>().0 {
                 rgb.extend_from_slice(&pixel_rgb(pixel, ten_bit));
             }
         }

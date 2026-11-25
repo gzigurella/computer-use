@@ -267,10 +267,10 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KeymapState {
             interface,
             version,
         } = event
+            && interface == "wl_seat"
+            && state.seat.is_none()
         {
-            if interface == "wl_seat" && state.seat.is_none() {
-                state.seat = Some(registry.bind(name, version.min(1), qh, ()));
-            }
+            state.seat = Some(registry.bind(name, version.min(1), qh, ()));
         }
     }
 }
@@ -1006,14 +1006,12 @@ fn normalize_legacy_xkb_keysyms(keymap: &str) -> String {
             && bytes[offset + 2..offset + 10]
                 .iter()
                 .all(u8::is_ascii_hexdigit)
+            && let Ok(symbol) = u32::from_str_radix(&keymap[offset + 2..offset + 10], 16)
+            && (0x0100_0000..=0x0100_00ff).contains(&symbol)
         {
-            if let Ok(symbol) = u32::from_str_radix(&keymap[offset + 2..offset + 10], 16)
-                && (0x0100_0000..=0x0100_00ff).contains(&symbol)
-            {
-                normalized.push_str(&format!("0x{:08x}", symbol & 0xff));
-                offset += 10;
-                continue;
-            }
+            normalized.push_str(&format!("0x{:08x}", symbol & 0xff));
+            offset += 10;
+            continue;
         }
         let character = keymap[offset..]
             .chars()
@@ -1904,7 +1902,7 @@ xkb_symbols "test" { key <ESC> { [ Escape ] }; };
                 return;
             }
             Err(error) => assert!(
-                error.contains("does not match"),
+                error.contains("does not match") || error.contains("does not exactly match"),
                 "unexpected compositor keymap error: {error}"
             ),
         }

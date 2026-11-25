@@ -427,8 +427,8 @@ async fn find_active(
     }
     ranked.sort_by_key(|(inactive, _, _)| *inactive);
     for (_, reference, child_path) in ranked {
-        if let Ok(child) = proxy(connection, &reference).await {
-            if let Some(found) = Box::pin(find_active(
+        if let Ok(child) = proxy(connection, &reference).await
+            && let Some(found) = Box::pin(find_active(
                 connection,
                 &child,
                 &child_path,
@@ -437,9 +437,8 @@ async fn find_active(
                 budget,
             ))
             .await
-            {
-                return Some(found);
-            }
+        {
+            return Some(found);
         }
     }
     None
@@ -479,8 +478,8 @@ async fn find_deepest_active_path(
     }
     ranked.sort_by_key(|(inactive, _, _)| *inactive);
     for (_, reference, child_path) in ranked {
-        if let Ok(child) = proxy(connection, &reference).await {
-            if let Some(candidate) = Box::pin(find_deepest_active_path(
+        if let Ok(child) = proxy(connection, &reference).await
+            && let Some(candidate) = Box::pin(find_deepest_active_path(
                 connection,
                 &child,
                 &child_path,
@@ -488,9 +487,8 @@ async fn find_deepest_active_path(
                 budget,
             ))
             .await
-            {
-                best = Some(candidate);
-            }
+        {
+            best = Some(candidate);
         }
     }
     best
@@ -524,14 +522,13 @@ async fn find_focused(
     {
         let mut rect = bounds(connection, &node_ref, CoordType::Screen).await;
         let mut coordinate_space = "screen";
-        if rect.is_some_and(|(x, y, _, _)| x == 0 && y == 0) {
-            if let Some(window_rect) = bounds(connection, &node_ref, CoordType::Window)
+        if rect.is_some_and(|(x, y, _, _)| x == 0 && y == 0)
+            && let Some(window_rect) = bounds(connection, &node_ref, CoordType::Window)
                 .await
                 .filter(|(x, y, _, _)| *x != 0 || *y != 0)
-            {
-                rect = Some(window_rect);
-                coordinate_space = "window";
-            }
+        {
+            rect = Some(window_rect);
+            coordinate_space = "window";
         }
         if let Some((x, y, width, height)) = rect.filter(|(_, _, w, h)| *w > 0 && *h > 0) {
             let container = ["desktop", "application", "frame", "window", "dialog"]
@@ -544,8 +541,8 @@ async fn find_focused(
     }
     let children = child_refs(node, path).await;
     for (reference, child_path) in children {
-        if let Ok(child) = proxy(connection, &reference).await {
-            if let Some(candidate) = Box::pin(find_focused(
+        if let Ok(child) = proxy(connection, &reference).await
+            && let Some(candidate) = Box::pin(find_focused(
                 connection,
                 &child,
                 &child_path,
@@ -554,11 +551,9 @@ async fn find_focused(
                 budget,
             ))
             .await
-            {
-                if best.as_ref().is_none_or(|current| candidate.0 > current.0) {
-                    best = Some(candidate);
-                }
-            }
+            && best.as_ref().is_none_or(|current| candidate.0 > current.0)
+        {
+            best = Some(candidate);
         }
     }
     best
@@ -622,38 +617,34 @@ async fn collect_tree(
         (None, None)
     };
     let mut node_bounds = None;
-    if state_names.contains(&"visible") && state_names.contains(&"showing") {
-        if let Some(node_ref) = node_ref.as_ref() {
-            node_bounds=bounds(connection,node_ref,CoordType::Screen).await.map(|(x,y,width,height)|json!({"x":x,"y":y,"width":width,"height":height,"coordinate_space":"screen"}));
-            if node_bounds
-                .as_ref()
-                .is_some_and(|rect| rect["x"] == 0 && rect["y"] == 0)
-            {
-                if let Some((x, y, width, height)) = bounds(connection, node_ref, CoordType::Window)
-                    .await
-                    .filter(|(x, y, _, _)| *x != 0 || *y != 0)
-                {
-                    node_bounds = Some(
-                        json!({"x":x,"y":y,"width":width,"height":height,"coordinate_space":"window"}),
-                    );
-                }
-            }
+    if state_names.contains(&"visible")
+        && state_names.contains(&"showing")
+        && let Some(node_ref) = node_ref.as_ref()
+    {
+        node_bounds=bounds(connection,node_ref,CoordType::Screen).await.map(|(x,y,width,height)|json!({"x":x,"y":y,"width":width,"height":height,"coordinate_space":"screen"}));
+        if node_bounds
+            .as_ref()
+            .is_some_and(|rect| rect["x"] == 0 && rect["y"] == 0)
+            && let Some((x, y, width, height)) = bounds(connection, node_ref, CoordType::Window)
+                .await
+                .filter(|(x, y, _, _)| *x != 0 || *y != 0)
+        {
+            node_bounds = Some(
+                json!({"x":x,"y":y,"width":width,"height":height,"coordinate_space":"window"}),
+            );
         }
     }
     let (mut children, children_truncated) = child_refs_with_truncation(node, path).await;
     let child_count = children.len();
     *truncated |= children_truncated;
     let mut actions = Vec::new();
-    if let Some(node_ref) = node_ref.as_ref() {
-        if let Ok(builder) =
+    if let Some(node_ref) = node_ref.as_ref()
+        && let Ok(builder) =
             ActionProxy::builder(connection.connection()).destination(node_ref.name.as_str())
-        {
-            if let Ok(builder) = builder.path(node_ref.path.as_str()) {
-                if let Ok(action) = builder.build().await {
-                    actions = action_names(&action, 16).await;
-                }
-            }
-        }
+        && let Ok(builder) = builder.path(node_ref.path.as_str())
+        && let Ok(action) = builder.build().await
+    {
+        actions = action_names(&action, 16).await;
     }
     let mut text = None;
     let mut text_truncated = false;
@@ -662,25 +653,17 @@ async fn collect_tree(
         && !state_names.contains(&"editable")
         && !role.to_lowercase().contains("password")
         && !role.to_lowercase().contains("document")
+        && let Some(node_ref) = node_ref.as_ref()
+        && let Ok(builder) =
+            TextProxy::builder(connection.connection()).destination(node_ref.name.as_str())
+        && let Ok(builder) = builder.path(node_ref.path.as_str())
+        && let Ok(text_proxy) = builder.build().await
+        && let Ok(count) = text_proxy.character_count().await
+        && count > 0
+        && let Ok(value) = text_proxy.get_text(0, count.min(512)).await
     {
-        if let Some(node_ref) = node_ref.as_ref() {
-            if let Ok(builder) =
-                TextProxy::builder(connection.connection()).destination(node_ref.name.as_str())
-            {
-                if let Ok(builder) = builder.path(node_ref.path.as_str()) {
-                    if let Ok(text_proxy) = builder.build().await {
-                        if let Ok(count) = text_proxy.character_count().await {
-                            if count > 0 {
-                                if let Ok(value) = text_proxy.get_text(0, count.min(512)).await {
-                                    text_truncated = count > 512;
-                                    text = Some(value);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        text_truncated = count > 512;
+        text = Some(value);
     }
     nodes.push(json!({"element_id":path,"name":name.chars().take(512).collect::<String>(),"role":role.chars().take(128).collect::<String>(),"process_id":pid,"accessible_id":accessible_id,"description":description.chars().take(512).collect::<String>(),"states":state_names,"bounds":node_bounds,"text":text,"text_truncated":text_truncated,"actions":actions}));
     if depth >= max_depth {

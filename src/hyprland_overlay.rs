@@ -607,10 +607,10 @@ impl Dispatch<WlOutput, Arc<Mutex<String>>> for Globals {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_output::Event::Name { name: output_name } = event {
-            if let Ok(mut name) = name.lock() {
-                *name = output_name;
-            }
+        if let wl_output::Event::Name { name: output_name } = event
+            && let Ok(mut name) = name.lock()
+        {
+            *name = output_name;
         }
     }
 }

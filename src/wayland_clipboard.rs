@@ -148,7 +148,7 @@ pub fn available() -> bool {
 }
 
 pub fn read_text() -> Result<String, String> {
-    request(|reply| Request::Read(reply))
+    request(Request::Read)
 }
 
 pub fn write_text(text: &str) -> Result<(), String> {
