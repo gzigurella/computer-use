@@ -27,7 +27,7 @@ def run(*args):
 metadata = json.loads(run("cargo", "metadata", "--locked", "--format-version", "1"))
 lock_hash = hashlib.sha256((ROOT / "Cargo.lock").read_bytes()).hexdigest()
 tree = run(
-    "cargo", "tree", "--locked", "--target", TARGET,
+    "cargo", "tree", "--locked", "--color", "never", "--target", TARGET,
     "--edges", "normal,build", "--prefix", "depth", "--format", "{p}",
 )
 packages = {
