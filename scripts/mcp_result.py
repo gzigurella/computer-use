@@ -113,3 +113,52 @@ def validate_tool_definition(tool):
         for hint in ("readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"):
             if hint in annotations:
                 _require(isinstance(annotations[hint], bool), f"{name}: {hint} is not a boolean")
+
+
+_JSON_TYPES = {
+    "object": dict,
+    "array": list,
+    "string": str,
+    "boolean": bool,
+    "null": type(None),
+}
+
+
+def _is_type(value, name):
+    if name == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if name == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, _JSON_TYPES[name])
+
+
+def validate_against_schema(value, schema, path="structuredContent"):
+    """Check the JSON Schema subset the server's output schemas use:
+    type, required, properties, items and enum."""
+    types = schema.get("type")
+    if types is not None:
+        names = types if isinstance(types, list) else [types]
+        _require(any(_is_type(value, name) for name in names),
+                 f"{path} should be {types}, got {type(value).__name__}: {value!r:.120}")
+    if "enum" in schema:
+        _require(value in schema["enum"], f"{path} should be one of {schema['enum']}, got {value!r}")
+    if isinstance(value, dict):
+        for field in schema.get("required", []):
+            _require(field in value, f"{path} is missing required field {field!r}")
+        for field, subschema in schema.get("properties", {}).items():
+            if field in value:
+                validate_against_schema(value[field], subschema, f"{path}.{field}")
+    if isinstance(value, list) and "items" in schema:
+        for index, item in enumerate(value):
+            validate_against_schema(item, schema["items"], f"{path}[{index}]")
+
+
+def validate_tool_output(result, tool):
+    """Validate a successful result's structuredContent against the tool's outputSchema."""
+    validate_tool_result(result)
+    schema = tool.get("outputSchema")
+    if schema is None or result.get("isError"):
+        return
+    _require("structuredContent" in result,
+             f"{tool['name']} declares outputSchema but returned no structuredContent")
+    validate_against_schema(result["structuredContent"], schema, f"{tool['name']}.structuredContent")

@@ -12,7 +12,7 @@ import sys
 import time
 from pathlib import Path
 
-from mcp_result import validate_tool_result
+from mcp_result import validate_tool_output, validate_tool_result
 
 
 class McpHttpProcess:
@@ -97,6 +97,8 @@ class McpHttpProcess:
     def tool(self, name, arguments=None):
         result = self.rpc("tools/call", {"name": name, "arguments": arguments or {}})
         validate_tool_result(result)
+        if name in getattr(self, "tools", {}):
+            validate_tool_output(result, self.tools[name])
         if result.get("isError"):
             raise RuntimeError(f"{name} failed: {result.get('content')}")
         structured = result.get("structuredContent")
@@ -258,6 +260,7 @@ def run(binary):
         client.request({"jsonrpc": "2.0", "method": "notifications/initialized"}, expected_status=202)
         listed = client.rpc("tools/list")
         tool_names = {tool.get("name") for tool in listed.get("tools", [])}
+        client.tools = {tool["name"]: tool for tool in listed.get("tools", [])}
         if not {"computer_status", "computer_start", "computer_observe", "computer_stop"}.issubset(tool_names):
             raise RuntimeError(f"HTTP MCP omitted core desktop tools: {tool_names}")
 

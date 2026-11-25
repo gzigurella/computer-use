@@ -14,7 +14,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from mcp_result import McpViolation, validate_tool_definition, validate_tool_result
+from mcp_result import McpViolation, validate_tool_definition, validate_tool_output, validate_tool_result
 
 LEGACY_VERSIONS = ["2025-03-26", "2025-06-18", "2025-11-25"]
 NEWEST_LEGACY_VERSION = "2025-11-25"
@@ -149,8 +149,12 @@ def check_session(binary):
             validate_tool_definition(tool)
         names = {tool["name"] for tool in definitions}
         check(names == EXPECTED_TOOLS, f"unexpected tool set: {sorted(names)}")
+        by_name = {tool["name"]: tool for tool in definitions}
+        for name in EXPECTED_TOOLS:
+            check("outputSchema" in by_name[name], f"{name} has no outputSchema")
 
         status = server.call_tool("computer_status", {})
+        validate_tool_output(status, by_name["computer_status"])
         check(status.get("isError") is False, f"computer_status reported an error: {status}")
         payload = status.get("structuredContent", {})
         targets = {target.get("name") for target in payload.get("targets", [])}
