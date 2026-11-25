@@ -1036,33 +1036,20 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn computer_status_returns_a_well_formed_tool_result() {
-        let state = std::sync::Arc::new(tokio::sync::Mutex::new(DesktopState {
-            session: None,
-            action_lock: Default::default(),
-            start_lock: Default::default(),
-        }));
-        let (_cancel, receiver) = tokio::sync::watch::channel(false);
-        let response = handle_request(
-            json!({"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
-                "name":"computer_status","arguments":{}
-            }}),
-            state,
-            receiver,
-        )
-        .await
-        .unwrap();
-        let result = &response["result"];
+    // The real computer_status probes desktop services (portals, AT-SPI), so its result
+    // shape is checked out of process by scripts/mcp-conformance.py. Probing here would,
+    // under dbus-run-session, activate a private AT-SPI bus whose socket replaces the
+    // user's real one in $XDG_RUNTIME_DIR.
+    #[test]
+    fn tool_results_mirror_structured_content_as_text() {
+        let status = json!({"available_backends":[{"name":"hyprland-native","target":"hyprland"}]});
+        let result = super::tool_result(status.clone(), Vec::new());
         assert_eq!(result["isError"], false);
         assert_eq!(result["content"][0]["type"], "text");
-        assert!(result["structuredContent"]["available_backends"].is_array());
-        for backend in result["structuredContent"]["available_backends"]
-            .as_array()
-            .unwrap()
-        {
-            assert!(backend["target"].is_string(), "{backend}");
-        }
+        let mirrored: Value =
+            serde_json::from_str(result["content"][0]["text"].as_str().unwrap()).unwrap();
+        assert_eq!(mirrored, status);
+        assert_eq!(result["structuredContent"], status);
     }
 
     #[test]
