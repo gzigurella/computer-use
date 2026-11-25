@@ -9,10 +9,14 @@ set -eu
 
 repository=${COMPUTER_USE_LINUX_REPOSITORY:-gzigurella/computer-use}
 arch=$(uname -m)
-if [ "$arch" != "x86_64" ]; then
-	printf '%s\n' "Releases are built for x86_64 only; build from source on $arch (see README)." >&2
-	exit 1
-fi
+case "$arch" in
+	x86_64) ;;
+	aarch64 | arm64) arch=aarch64 ;;
+	*)
+		printf '%s\n' "Releases are built for x86_64 and aarch64; build from source on $arch (see README)." >&2
+		exit 1
+		;;
+esac
 
 tag=${1:-}
 if [ -z "$tag" ]; then

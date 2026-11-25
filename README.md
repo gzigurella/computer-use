@@ -35,7 +35,7 @@ cargo build --release
 
 The default build excludes the experimental backends and reports that in `computer_status.capabilities.build_features`; explicitly selecting an excluded backend returns a rebuild hint. Enable experimental backends with `--features backend-x11,backend-sway,backend-portal` or select only the backends needed by your build.
 
-For a statically linked x86_64 Linux executable for the Hyprland target:
+For a statically linked Linux executable for the Hyprland target (shown for x86_64; use `aarch64-unknown-linux-musl` on ARM):
 
 ```sh
 rustup target add x86_64-unknown-linux-musl
@@ -48,7 +48,7 @@ This emits a static-PIE binary under `target/x86_64-unknown-linux-musl/release/`
 
 ### Releases
 
-Pushing a `vX.Y.Z` tag that matches the `Cargo.toml` version runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It builds the static x86_64 Hyprland binary, checks that it has no dynamic dependencies, runs the MCP conformance test, and publishes `computer-use-linux-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz` with a SHA-256 file. The archive records the bundled `xkb-data` version in `BUNDLED-XKB-DATA`. To install the latest release where the MCP launcher finds it (`$XDG_DATA_HOME/computer-use-linux/bin/`):
+Pushing a `vX.Y.Z` tag that matches the `Cargo.toml` version runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It builds the static Hyprland binary natively for x86_64 and aarch64, checks that each has no dynamic dependencies, runs the MCP conformance test on each, and publishes `computer-use-linux-vX.Y.Z-<arch>-unknown-linux-musl.tar.gz` with a SHA-256 file for both. The archive records the bundled `xkb-data` version in `BUNDLED-XKB-DATA`. To install the latest release where the MCP launcher finds it (`$XDG_DATA_HOME/computer-use-linux/bin/`):
 
 ```sh
 sh scripts/install-release.sh          # or: sh scripts/install-release.sh v0.1.0
