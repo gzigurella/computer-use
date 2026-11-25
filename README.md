@@ -195,8 +195,7 @@ test checks click, Enter, Ctrl+A, text, and smooth-scroll delivery in GTK4. It
 also verifies that a drag selects text in a GTK text view and that the client's
 Wayland trace contains motion between drag press and release.
 It needs Sway, GTK4 Python bindings, Foot, Grim, `wlr-randr`, `wtype`, and
-`dbus-run-session`. CI runs both experimental backends in a job that reports
-without blocking, checks the build without optional backends, and builds the
+`dbus-run-session`. CI runs both experimental backends, checks the build without optional backends, and builds the
 static musl default Hyprland-only binary, verifying that it has no dynamic ELF
 dependencies or interpreter and passes the MCP conformance test.
 
