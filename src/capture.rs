@@ -469,17 +469,31 @@ pub(crate) fn grim_image(
         command.arg("-c");
     }
     command.arg("-");
-    let (image, status) = bounded_command_output(
-        &mut command,
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("grim capture failed: starting capture process: {error}"))?;
+    let pid = child.pid;
+    let stderr = spawn_output_reader(child.stderr.take(), Some(4096));
+    let output = bounded_child_output(
+        child,
         if pointer_overlay.is_some() {
             64 * 1024 * 1024
         } else {
             MAX_IMAGE
         },
-    )
-    .map_err(|error| format!("grim capture failed: {error}"))?;
+    );
+    let stderr = join_output_reader(stderr, pid).unwrap_or_default();
+    let (image, status) = output.map_err(|error| format!("grim capture failed: {error}"))?;
     if !status.success() {
-        return Err(format!("grim capture failed with status {status}"));
+        let detail = String::from_utf8_lossy(&stderr[..stderr.len().min(4096)]);
+        let detail = detail.trim();
+        return Err(if detail.is_empty() {
+            format!("grim capture failed with status {status}")
+        } else {
+            format!("grim capture failed with status {status}: {detail}")
+        });
     }
     if let Some((cursor_x, cursor_y, logical_width, logical_height, output_scale)) = pointer_overlay
     {
