@@ -56,8 +56,8 @@ if [ -z "$server_binary" ] || [ ! -x "$server_binary" ]; then
 	cat >&2 <<MESSAGE
 computer-use-linux server binary not found${server_binary:+: $server_binary}.
 Install it with one of:
-  - download the release for $arch from the project's GitHub releases into
-    $data_home/computer-use-linux/bin/computer-use-linux and make it executable;
+  - run scripts/install-release.sh from https://github.com/gzigurella/computer-use
+    (installs the latest release into $data_home/computer-use-linux/bin);
   - cargo install --locked --git https://github.com/gzigurella/computer-use computer-use-linux;
   - build a checkout with cargo build --release;
 or set COMPUTER_USE_LINUX_BINARY to the binary's path.

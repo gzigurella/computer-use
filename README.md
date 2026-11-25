@@ -46,6 +46,16 @@ This default artifact contains only the supported Hyprland implementation. To in
 
 This emits a static-PIE binary under `target/x86_64-unknown-linux-musl/release/` with no ELF `DT_NEEDED` entries. The supported `hyprland-native` backend implements capture, pointer and keyboard input, clipboard, compositor IPC, and the AT-SPI2 client in-process. It still uses the desktop accessibility bus and the applications' toolkit bridges. Fallback backends may use host desktop helpers; see [DEPENDENCY-BOM.md](DEPENDENCY-BOM.md).
 
+### Releases
+
+Pushing a `vX.Y.Z` tag that matches the `Cargo.toml` version runs [`.github/workflows/release.yml`](.github/workflows/release.yml). It builds the static x86_64 Hyprland binary, checks that it has no dynamic dependencies, runs the MCP conformance test, and publishes `computer-use-linux-vX.Y.Z-x86_64-unknown-linux-musl.tar.gz` with a SHA-256 file. The archive records the bundled `xkb-data` version in `BUNDLED-XKB-DATA`. To install the latest release where the MCP launcher finds it (`$XDG_DATA_HOME/computer-use-linux/bin/`):
+
+```sh
+sh scripts/install-release.sh          # or: sh scripts/install-release.sh v0.1.0
+```
+
+The script verifies the checksum before installing. Other architectures build from source.
+
 ### Use with MCP clients
 
 `plugin/scripts/computer-use-mcp.sh` starts the server over stdio (`scripts/computer-use-mcp.sh` forwards to it for existing configurations). It looks for the server in this order: `COMPUTER_USE_LINUX_BINARY`; in a checkout, the more recently built of the static and native release builds; `$XDG_DATA_HOME/computer-use-linux/bin/`, `~/.local/bin/`, `~/.cargo/bin/`; then `PATH`. When the client was not started from the graphical Login Session (for example a systemd service or SSH), it fills in missing desktop variables such as `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE` from `systemctl --user show-environment`. Variables the client already has are left alone.
