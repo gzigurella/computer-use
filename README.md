@@ -195,10 +195,15 @@ test checks click, Enter, Ctrl+A, text, and smooth-scroll delivery in GTK4. It
 also verifies that a drag selects text in a GTK text view and that the client's
 Wayland trace contains motion between drag press and release.
 It needs Sway, GTK4 Python bindings, Foot, Grim, `wlr-randr`, `wtype`, and
-`dbus-run-session`. CI runs both experimental backends and checks the build
-without optional backends. A separate Ubuntu 26.04 job builds the static musl
-default Hyprland-only binary, verifies that it has no dynamic ELF
-dependencies or interpreter, then starts an isolated headless Hyprland instance.
+`dbus-run-session`. CI runs both experimental backends in a job that reports
+without blocking, checks the build without optional backends, and builds the
+static musl default Hyprland-only binary, verifying that it has no dynamic ELF
+dependencies or interpreter and passes the MCP conformance test.
+
+Hyprland needs a GPU render node, which GitHub's hosted runners lack, so the
+Hyprland smoke runs locally on a machine with a GPU:
+`dbus-run-session -- bash scripts/hyprland-ci.sh <binary>` (add `--qt` for the
+Qt 6 receiver) starts an isolated nested Hyprland instance.
 The smoke creates a temporary second output in portrait orientation at 125% scale
 and exercises output selection, transformed coordinate mapping, and native GTK 4
 and Qt 6 input on it. It does not add an output to the developer's running
@@ -207,7 +212,7 @@ of the rotated output, checking both Hyprland's cursor position and the visual
 arrow (with one-pixel tolerance for screenshot-to-logical rounding). During
 the live session it also repositions the selected output, verifies that actions
 based on the old display layout are rejected, and checks that a fresh
-observation updates the display geometry and overlay position. The GTK CI adds
+observation updates the display geometry and overlay position. The GTK run adds
 an isolated 3840×2160 headless-output run, requests 10-bit output, reports the
 selected framebuffer format, and verifies the captured JPEG is downsampled to
 the 2576-pixel long edge of the default high-resolution image profile. It also checks that the embedded XKB
@@ -256,7 +261,7 @@ Streamable HTTP discovery, protocol-header validation, authentication, and the
 full desktop start/observe/stop flow,
 then also requires smooth and discrete scroll delivery. Hyprland's virtual-pointer wheel-event fix
 ([Hyprland #15319](https://github.com/hyprwm/Hyprland/pull/15319)) is included
-in the 0.56.0 release line used by the CI compositor.
+in the 0.56.0 release line used by the test compositor.
 These checks do not cover the interactive ScreenCast/RemoteDesktop portal chooser.
 The opt-in portal smoke below waits for the system source chooser, then checks
 two captured frames, fresh observation IDs, and session cleanup. It is optional
