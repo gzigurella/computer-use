@@ -1902,7 +1902,10 @@ xkb_symbols "test" { key <ESC> { [ Escape ] }; };
                 return;
             }
             Err(error) => assert!(
-                error.contains("does not match") || error.contains("does not exactly match"),
+                error.contains("does not match")
+                    || error.contains("does not exactly match")
+                    // The live compositor can briefly expose a keymap without layouts.
+                    || error.contains("is outside the compositor keymap"),
                 "unexpected compositor keymap error: {error}"
             ),
         }

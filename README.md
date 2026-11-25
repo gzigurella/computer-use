@@ -68,6 +68,23 @@ args = []
 
 Set `COMPUTER_USE_LINUX_BINARY` in the MCP entry's `env` table (`env` in `.mcp.json`, or `-e` with `claude mcp add`) to choose another server binary.
 
+## Source layout
+
+| Module | Responsibility |
+|---|---|
+| `main.rs` | Entry point, shared domain types (`Backend`, `DesktopSession`, `Observation`), Target/Backend mapping, AT-SPI helpers |
+| `mcp.rs` | stdio and Streamable HTTP transports, protocol negotiation, JSON-RPC dispatch |
+| `tools.rs` | MCP tool definitions and dispatch |
+| `status.rs` | `computer_status` probing of the Login Session |
+| `session.rs` | `computer_start`, `computer_stop`, `computer_observe` |
+| `actions.rs` | `computer_act` validation and pointer, keyboard, scroll and accessibility input |
+| `capture.rs` | Screenshot capture per Backend |
+| `layout.rs` | Output geometry, pointer position, active window |
+| `process.rs` | Supervised helper processes with deadlines |
+| `clipboard.rs`, `wtype.rs`, `hyprland_ipc.rs` | Clipboard, `wtype` keyboard fallback, Hyprland IPC |
+| `hyprland_capture.rs`, `hyprland_overlay.rs`, `virtual_pointer.rs`, `virtual_keyboard.rs`, `wayland_clipboard.rs` | Native Wayland protocol clients |
+| `portal.rs`, `eis.rs`, `sway.rs`, `x11.rs` (+ `*_stub.rs`) | Experimental Backends, stubbed when their Cargo feature is off |
+
 ## Verify
 
 `scripts/mcp-conformance.py` needs no desktop or Python packages. It checks the stdio server against the MCP schema rules that real clients such as Claude Code enforce: JSON-RPC framing, `initialize` version negotiation and instructions, tool definitions, and well-formed `content` and `structuredContent` in every tool result, including errors. All smoke clients share the same strict validator (`scripts/mcp_result.py`), so they fail on replies a real client would reject.
