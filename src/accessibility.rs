@@ -559,6 +559,10 @@ async fn find_focused(
     best
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the recursive walk threads its shared budget and output through each call"
+)]
 async fn collect_tree(
     connection: &AccessibilityConnection,
     node: &AccessibleProxy<'_>,

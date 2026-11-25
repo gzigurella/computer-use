@@ -753,9 +753,10 @@ fn normalize_keymap_name(name: &str) -> String {
         .collect()
 }
 
-fn compile_rust_xkb_keymap(
-    settings: &XkbSettings,
-) -> Result<(String, HashMap<String, KeyMapping>, HashMap<u32, u32>), String> {
+/// A keymap string, its named-key mappings, and its keycode remaps.
+type CompiledKeymap = (String, HashMap<String, KeyMapping>, HashMap<u32, u32>);
+
+fn compile_rust_xkb_keymap(settings: &XkbSettings) -> Result<CompiledKeymap, String> {
     if settings
         .rules
         .as_deref()
@@ -1024,16 +1025,14 @@ fn normalize_legacy_xkb_keysyms(keymap: &str) -> String {
 }
 
 #[cfg(test)]
-fn compile_xkb_keymap(
-    settings: &XkbSettings,
-) -> Result<(String, HashMap<String, KeyMapping>, HashMap<u32, u32>), String> {
+fn compile_xkb_keymap(settings: &XkbSettings) -> Result<CompiledKeymap, String> {
     compile_xkb_keymap_with_source(settings, None)
 }
 
 fn compile_xkb_keymap_with_source(
     settings: &XkbSettings,
     compositor_keymap: Option<&str>,
-) -> Result<(String, HashMap<String, KeyMapping>, HashMap<u32, u32>), String> {
+) -> Result<CompiledKeymap, String> {
     use crate::DynamicLibrary;
 
     type ContextNew = unsafe extern "C" fn(u32) -> *mut c_void;
@@ -1635,6 +1634,10 @@ fn type_text_inner(text: &str, cancelled: Option<&AtomicBool>) -> Result<(), Str
         .map_err(|error| format!("synchronizing virtual keyboard events: {error}"))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the Wayland protocol state is borrowed piecewise from the caller"
+)]
 fn send_chunk(
     queue: &mut EventQueue<State>,
     state: &mut State,

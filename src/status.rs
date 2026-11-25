@@ -203,7 +203,7 @@ pub(crate) async fn desktop_status() -> Value {
     let portal_keyboard = portal_backend && remote_desktop;
     let direct_keyboard =
         backend == "hyprland" || backend == "hyprland-native" || backend == "hyprland-grim";
-    let mut notes = capability_notes(
+    let mut notes = capability_notes(CapabilityFacts {
         backend,
         screenshot,
         atspi,
@@ -215,15 +215,15 @@ pub(crate) async fn desktop_status() -> Value {
         hyprland,
         sway_candidate,
         sway,
-        screencast,
-        pipewire_capture,
         xkb,
         virtual_pointer,
-        virtual_pointer_error.as_deref(),
         embedded_cursor,
         grim_cursor_capture,
         wlroots_layout,
-    );
+        screencast,
+        pipewire_capture,
+        virtual_pointer_error: virtual_pointer_error.as_deref(),
+    });
     if hyprland && hyprland_virtual_keyboard && !xkb {
         notes.push("libxkbcommon is unavailable; Hyprland keypresses use the Rust XKB backend when standard evdev/pc105 XKB data is installed, otherwise the embedded US map.".into());
     }
@@ -446,27 +446,51 @@ pub(crate) fn hyprland_screencast_note(native_capture: bool, grim_capture: bool)
     )
 }
 
-pub(crate) fn capability_notes(
-    backend: &str,
-    screenshot: bool,
-    atspi: bool,
-    remote_desktop: bool,
-    wayland: bool,
-    x11: bool,
-    x11_input: bool,
-    hyprland_candidate: bool,
-    hyprland: bool,
-    sway_candidate: bool,
-    sway: bool,
-    _screencast: bool,
-    _pipewire_capture: bool,
-    xkb: bool,
-    virtual_pointer: bool,
-    virtual_pointer_error: Option<&str>,
-    embedded_cursor: bool,
-    grim_cursor_capture: bool,
-    wlroots_layout: bool,
-) -> Vec<String> {
+/// What the status probe found, for choosing the notes that explain it.
+pub(crate) struct CapabilityFacts<'a> {
+    pub(crate) backend: &'a str,
+    pub(crate) screenshot: bool,
+    pub(crate) atspi: bool,
+    pub(crate) remote_desktop: bool,
+    pub(crate) wayland: bool,
+    pub(crate) x11: bool,
+    pub(crate) x11_input: bool,
+    pub(crate) hyprland_candidate: bool,
+    pub(crate) hyprland: bool,
+    pub(crate) sway_candidate: bool,
+    pub(crate) sway: bool,
+    pub(crate) xkb: bool,
+    pub(crate) virtual_pointer: bool,
+    pub(crate) embedded_cursor: bool,
+    pub(crate) grim_cursor_capture: bool,
+    pub(crate) wlroots_layout: bool,
+    pub(crate) screencast: bool,
+    pub(crate) pipewire_capture: bool,
+    pub(crate) virtual_pointer_error: Option<&'a str>,
+}
+
+pub(crate) fn capability_notes(facts: CapabilityFacts<'_>) -> Vec<String> {
+    let CapabilityFacts {
+        backend,
+        screenshot,
+        atspi,
+        remote_desktop,
+        wayland,
+        x11,
+        x11_input,
+        hyprland_candidate,
+        hyprland,
+        sway_candidate,
+        sway,
+        xkb,
+        virtual_pointer,
+        embedded_cursor,
+        grim_cursor_capture,
+        wlroots_layout,
+        screencast: _screencast,
+        pipewire_capture: _pipewire_capture,
+        virtual_pointer_error,
+    } = facts;
     let mut notes = Vec::new();
     let grim_backend =
         backend == "hyprland-grim" || backend == "sway-grim" || backend == "wayland-grim";

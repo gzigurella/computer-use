@@ -752,6 +752,10 @@ fn focused_element_now() -> Result<Option<Value>, String> {
         .cloned())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "each argument is one field of the element identity the helper re-validates"
+)]
 fn atspi_action(
     element_id: &str,
     expected_name: &str,
