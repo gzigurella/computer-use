@@ -157,7 +157,7 @@ onclick="document.title='Computer-use Firefox AT-SPI smoke — Saved'; document.
             mcp.start()
             for attempt in range(3):
                 try:
-                    start_arguments = {"backend": "hyprland-native", "overlay_monitor": monitor}
+                    start_arguments = {"backend": "hyprland-native", "output": monitor}
                     started = mcp.call("tools/call", {"name": "computer_start", "arguments": start_arguments})
                     break
                 except RuntimeError as error:

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "computer-use-linux": {
+      "type": "stdio",
+      "command": "./scripts/computer-use-mcp.sh",
+      "args": []
+    }
+  }
+}

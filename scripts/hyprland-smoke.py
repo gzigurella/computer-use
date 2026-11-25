@@ -356,7 +356,7 @@ def check_overlay_parent_death(binary, monitor):
             },
         )
         client.rpc("notifications/initialized", notification=True)
-        _, metadata = client.call("computer_start", {"overlay_monitor": monitor})
+        _, metadata = client.call("computer_start", {"output": monitor})
         if not metadata.get("capabilities", {}).get("visual_pointer_overlay"):
             raise RuntimeError("overlay lifecycle smoke could not start the visual pointer")
         active_monitor, entry = pointer_overlay()
@@ -397,7 +397,7 @@ def check_overlay_child_death(binary, monitor):
             },
         )
         client.rpc("notifications/initialized", notification=True)
-        _, metadata = client.call("computer_start", {"overlay_monitor": monitor})
+        _, metadata = client.call("computer_start", {"output": monitor})
         session_id = metadata["session_id"]
         active_monitor, entry = pointer_overlay()
         if active_monitor != monitor or not entry:
@@ -454,7 +454,7 @@ def check_native_runtime_without_path(binary, monitor, stale_bundle):
             },
         )
         client.rpc("notifications/initialized", notification=True)
-        _, metadata = client.call("computer_start", {"overlay_monitor": monitor})
+        _, metadata = client.call("computer_start", {"output": monitor})
         capabilities = metadata.get("capabilities", {})
         if metadata.get("active_backend") != "hyprland-native" or not metadata.get("capture_validated"):
             raise RuntimeError(f"native Hyprland did not start and capture with an empty PATH: {metadata}")
@@ -754,7 +754,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                     if unselected_metadata.get("session_id"):
                         mcp.call("computer_stop", {"session_id": unselected_metadata["session_id"]})
                     raise RuntimeError("computer_start did not require monitor selection for multiple outputs")
-            start_arguments = {"overlay_monitor": target_monitor["name"]} if len(all_monitors) > 1 else {}
+            start_arguments = {"output": target_monitor["name"]} if len(all_monitors) > 1 else {}
             started, metadata = mcp.call("computer_start", start_arguments)
             session_id = metadata["session_id"]
             forced_fallback_map = metadata.get("capabilities", {}).get("keyboard_layout", {})
@@ -1352,7 +1352,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                 "computer_start",
                 {
                     "backend": "hyprland-grim",
-                    "overlay_monitor": target_monitor["name"],
+                    "output": target_monitor["name"],
                 },
             )
             session_id = fallback_metadata["session_id"]
@@ -1369,7 +1369,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
 
             if virtual_output:
                 _, second_metadata = mcp.call(
-                    "computer_start", {"overlay_monitor": virtual_output["name"]}
+                    "computer_start", {"output": virtual_output["name"]}
                 )
                 session_id = second_metadata["session_id"]
                 second_display = second_metadata["display"]

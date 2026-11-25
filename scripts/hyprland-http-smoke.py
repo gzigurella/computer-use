@@ -203,7 +203,9 @@ def run(binary):
                 "MCP-Name": "computer_status",
             },
         )
-        if modern_status.get("recommended_backend") != "hyprland-native":
+        if not isinstance(modern_status.get("content"), list) or (
+            modern_status.get("structuredContent", {}).get("recommended_backend") != "hyprland-native"
+        ):
             raise RuntimeError(f"modern HTTP tool call returned an invalid status: {modern_status}")
 
         def modern_tool(name, arguments):
@@ -218,7 +220,7 @@ def run(binary):
                 },
             )
 
-        modern_started = modern_tool("computer_start", {"overlay_monitor": active[0]})
+        modern_started = modern_tool("computer_start", {"output": active[0]})
         modern_started_metadata = modern_started.get("structuredContent", {})
         modern_session_id = modern_started_metadata.get("session_id")
         if not modern_session_id or modern_started_metadata.get("active_backend") != "hyprland-native":
@@ -261,7 +263,7 @@ def run(binary):
         status = client.tool("computer_status")
         if status.get("recommended_backend") != "hyprland-native":
             raise RuntimeError(f"HTTP computer_status did not recommend native Hyprland: {status}")
-        started = client.tool("computer_start", {"overlay_monitor": active[0]})
+        started = client.tool("computer_start", {"output": active[0]})
         session_id = started.get("session_id")
         capabilities = started.get("capabilities", {})
         if started.get("active_backend") != "hyprland-native" or not started.get("capture_validated"):
@@ -311,7 +313,7 @@ def run(binary):
 
     crash_client = McpHttpProcess(binary)
     try:
-        crash_started = crash_client.tool("computer_start", {"overlay_monitor": active[0]})
+        crash_started = crash_client.tool("computer_start", {"output": active[0]})
         if crash_started.get("capabilities", {}).get("native_cursor_hidden") is not original_cursor_invisible:
             raise RuntimeError("crash-recovery start changed native cursor visibility")
         if cursor_invisible() is not original_cursor_invisible:
