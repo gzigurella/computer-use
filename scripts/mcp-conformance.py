@@ -134,8 +134,11 @@ def check_session(binary):
         status = server.call_tool("computer_status", {})
         check(status.get("isError") is False, f"computer_status reported an error: {status}")
         payload = status.get("structuredContent", {})
+        targets = {target.get("name") for target in payload.get("targets", [])}
+        check(targets, "computer_status has no targets list")
+        check("recommended_target" in payload, "computer_status has no recommended_target")
         for backend in payload.get("available_backends", []):
-            check(isinstance(backend.get("target"), str), f"backend without target: {backend}")
+            check(backend.get("target") in targets, f"backend with unknown target: {backend}")
 
         # Every failure must still be a well-formed tool result with isError=true.
         for name, arguments in [
@@ -143,6 +146,8 @@ def check_session(binary):
             ("computer_act", {"session_id": "no-such-session", "action": {"type": "wait"}}),
             ("computer_stop", {"session_id": "no-such-session"}),
             ("computer_start", {"output": "a", "overlay_monitor": "b"}),
+            ("computer_start", {"target": "sway", "backend": "hyprland-grim"}),
+            ("computer_start", {"target": "no-such-target"}),
             ("no_such_tool", {}),
         ]:
             result = server.call_tool(name, arguments)

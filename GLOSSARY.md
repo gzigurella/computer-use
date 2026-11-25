@@ -61,7 +61,3 @@ _Avoid_: Node, widget, control (when meaning this)
 **AI Pointer**:
 The styled arrow showing the agent where the shared native pointer is. It is a visual aid only and does not replace the native cursor.
 _Avoid_: Overlay, AI cursor, virtual pointer
-
-## Flagged ambiguities
-
-- The `screenshot` Action creates a full Observation, not just a Screenshot. It isn't yet decided whether it should be renamed, or should return a Screenshot without replacing the current Observation.

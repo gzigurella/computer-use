@@ -13,5 +13,5 @@ The project uses two separate concepts. A **Target** is the kind of desktop bein
 
 ## Consequences
 
-- The public tool API (`computer_status`, `computer_start`) currently exposes flat values such as `hyprland-native`. Each one corresponds to a Target/Backend pair, and the API should eventually take both explicitly. That change is visible to clients, which is why this decision is recorded.
+- The public tool API takes both: `computer_start` accepts a `target`, which alone picks that Target's first Available Backend, and a `backend`, which must belong to the given Target. Backend IDs stay globally unique and Target-qualified (`hyprland-native`, `hyprland-grim`), so existing clients that pass only `backend` keep working. `computer_status` reports `targets`, `recommended_target`, and the `target` of each backend.
 - Contributor docs for new desktops should describe adding a Target. New ways of capturing or sending input on an existing Target are Backends.
