@@ -66,11 +66,11 @@ fn create_private_temp_dir() -> Result<PathBuf, String> {
         builder.mode(0o700);
         match builder.create(&path) {
             Ok(()) => {
-                if let Some(start_time) = process_start_time(std::process::id()) {
-                    if let Err(error) = fs::write(path.join("owner"), start_time.to_string()) {
-                        let _ = fs::remove_dir_all(&path);
-                        return Err(format!("recording embedded XKB bundle owner: {error}"));
-                    }
+                if let Some(start_time) = process_start_time(std::process::id())
+                    && let Err(error) = fs::write(path.join("owner"), start_time.to_string())
+                {
+                    let _ = fs::remove_dir_all(&path);
+                    return Err(format!("recording embedded XKB bundle owner: {error}"));
                 }
                 return Ok(path);
             }
@@ -124,8 +124,8 @@ fn clean_stale_bundles(base: &Path) {
 
 fn process_start_time(pid: u32) -> Option<u64> {
     let status = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
-    let fields = status.get(status.rfind(')')? + 1..)?.split_whitespace();
-    fields.skip(19).next()?.parse().ok()
+    let mut fields = status.get(status.rfind(')')? + 1..)?.split_whitespace();
+    fields.nth(19)?.parse().ok()
 }
 
 #[cfg(test)]

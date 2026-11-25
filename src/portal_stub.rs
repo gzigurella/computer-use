@@ -1,6 +1,8 @@
 use serde_json::Value;
 use std::fmt;
 
+type FrameWithCursor = (Vec<u8>, Option<(i32, i32)>);
+
 #[derive(Debug)]
 pub enum PortalStartError {
     Failed(String),
@@ -35,11 +37,7 @@ pub struct PortalSession {
 }
 
 impl PortalSession {
-    pub fn capture_with_cursor(
-        &self,
-        _: u8,
-        _: u32,
-    ) -> Result<(Vec<u8>, Option<(i32, i32)>), String> {
+    pub fn capture_with_cursor(&self, _: u8, _: u32) -> Result<FrameWithCursor, String> {
         Err(unavailable())
     }
     pub fn cursor_position_available(&self) -> bool {

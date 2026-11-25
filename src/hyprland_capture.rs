@@ -331,6 +331,10 @@ fn create_shm_file(size: usize) -> Result<File, String> {
     Ok(file)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "a raw frame is described by independent buffer, format and output parameters"
+)]
 fn encode_jpeg(
     raw: &[u8],
     width: u32,
@@ -387,6 +391,10 @@ fn encode_jpeg(
     Ok(jpeg)
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "independent frame, cursor and scale parameters of one pixel operation"
+)]
 pub(crate) fn composite_pointer(
     rgb: &mut [u8],
     width: usize,
@@ -490,7 +498,7 @@ fn resize_rgb_area(
             let row = raw
                 .get(row_start..row_start + width as usize * 4)
                 .ok_or("screencopy frame is truncated")?;
-            for pixel in row.chunks_exact(4) {
+            for pixel in row.as_chunks::<4>().0 {
                 rgb.extend_from_slice(&pixel_rgb(pixel, ten_bit));
             }
         }

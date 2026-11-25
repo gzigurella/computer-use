@@ -12,6 +12,8 @@ import sys
 import time
 from pathlib import Path
 
+from mcp_result import validate_tool_output, validate_tool_result
+
 
 class McpHttpProcess:
     def __init__(self, binary):
@@ -94,13 +96,14 @@ class McpHttpProcess:
 
     def tool(self, name, arguments=None):
         result = self.rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        validate_tool_result(result)
+        if name in getattr(self, "tools", {}):
+            validate_tool_output(result, self.tools[name])
         if result.get("isError"):
             raise RuntimeError(f"{name} failed: {result.get('content')}")
         structured = result.get("structuredContent")
         if isinstance(structured, dict):
             return structured
-        if "content" not in result and isinstance(result, dict):
-            return result
         for item in result.get("content", []):
             if item.get("type") == "text":
                 try:
@@ -203,7 +206,9 @@ def run(binary):
                 "MCP-Name": "computer_status",
             },
         )
-        if modern_status.get("recommended_backend") != "hyprland-native":
+        if not isinstance(modern_status.get("content"), list) or (
+            modern_status.get("structuredContent", {}).get("recommended_backend") != "hyprland-native"
+        ):
             raise RuntimeError(f"modern HTTP tool call returned an invalid status: {modern_status}")
 
         def modern_tool(name, arguments):
@@ -218,7 +223,7 @@ def run(binary):
                 },
             )
 
-        modern_started = modern_tool("computer_start", {"overlay_monitor": active[0]})
+        modern_started = modern_tool("computer_start", {"output": active[0]})
         modern_started_metadata = modern_started.get("structuredContent", {})
         modern_session_id = modern_started_metadata.get("session_id")
         if not modern_session_id or modern_started_metadata.get("active_backend") != "hyprland-native":
@@ -255,13 +260,14 @@ def run(binary):
         client.request({"jsonrpc": "2.0", "method": "notifications/initialized"}, expected_status=202)
         listed = client.rpc("tools/list")
         tool_names = {tool.get("name") for tool in listed.get("tools", [])}
+        client.tools = {tool["name"]: tool for tool in listed.get("tools", [])}
         if not {"computer_status", "computer_start", "computer_observe", "computer_stop"}.issubset(tool_names):
             raise RuntimeError(f"HTTP MCP omitted core desktop tools: {tool_names}")
 
         status = client.tool("computer_status")
         if status.get("recommended_backend") != "hyprland-native":
             raise RuntimeError(f"HTTP computer_status did not recommend native Hyprland: {status}")
-        started = client.tool("computer_start", {"overlay_monitor": active[0]})
+        started = client.tool("computer_start", {"output": active[0]})
         session_id = started.get("session_id")
         capabilities = started.get("capabilities", {})
         if started.get("active_backend") != "hyprland-native" or not started.get("capture_validated"):
@@ -311,7 +317,7 @@ def run(binary):
 
     crash_client = McpHttpProcess(binary)
     try:
-        crash_started = crash_client.tool("computer_start", {"overlay_monitor": active[0]})
+        crash_started = crash_client.tool("computer_start", {"output": active[0]})
         if crash_started.get("capabilities", {}).get("native_cursor_hidden") is not original_cursor_invisible:
             raise RuntimeError("crash-recovery start changed native cursor visibility")
         if cursor_invisible() is not original_cursor_invisible:

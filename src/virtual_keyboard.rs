@@ -267,10 +267,10 @@ impl Dispatch<wl_registry::WlRegistry, ()> for KeymapState {
             interface,
             version,
         } = event
+            && interface == "wl_seat"
+            && state.seat.is_none()
         {
-            if interface == "wl_seat" && state.seat.is_none() {
-                state.seat = Some(registry.bind(name, version.min(1), qh, ()));
-            }
+            state.seat = Some(registry.bind(name, version.min(1), qh, ()));
         }
     }
 }
@@ -753,9 +753,10 @@ fn normalize_keymap_name(name: &str) -> String {
         .collect()
 }
 
-fn compile_rust_xkb_keymap(
-    settings: &XkbSettings,
-) -> Result<(String, HashMap<String, KeyMapping>, HashMap<u32, u32>), String> {
+/// A keymap string, its named-key mappings, and its keycode remaps.
+type CompiledKeymap = (String, HashMap<String, KeyMapping>, HashMap<u32, u32>);
+
+fn compile_rust_xkb_keymap(settings: &XkbSettings) -> Result<CompiledKeymap, String> {
     if settings
         .rules
         .as_deref()
@@ -1006,14 +1007,12 @@ fn normalize_legacy_xkb_keysyms(keymap: &str) -> String {
             && bytes[offset + 2..offset + 10]
                 .iter()
                 .all(u8::is_ascii_hexdigit)
+            && let Ok(symbol) = u32::from_str_radix(&keymap[offset + 2..offset + 10], 16)
+            && (0x0100_0000..=0x0100_00ff).contains(&symbol)
         {
-            if let Ok(symbol) = u32::from_str_radix(&keymap[offset + 2..offset + 10], 16)
-                && (0x0100_0000..=0x0100_00ff).contains(&symbol)
-            {
-                normalized.push_str(&format!("0x{:08x}", symbol & 0xff));
-                offset += 10;
-                continue;
-            }
+            normalized.push_str(&format!("0x{:08x}", symbol & 0xff));
+            offset += 10;
+            continue;
         }
         let character = keymap[offset..]
             .chars()
@@ -1026,16 +1025,14 @@ fn normalize_legacy_xkb_keysyms(keymap: &str) -> String {
 }
 
 #[cfg(test)]
-fn compile_xkb_keymap(
-    settings: &XkbSettings,
-) -> Result<(String, HashMap<String, KeyMapping>, HashMap<u32, u32>), String> {
+fn compile_xkb_keymap(settings: &XkbSettings) -> Result<CompiledKeymap, String> {
     compile_xkb_keymap_with_source(settings, None)
 }
 
 fn compile_xkb_keymap_with_source(
     settings: &XkbSettings,
     compositor_keymap: Option<&str>,
-) -> Result<(String, HashMap<String, KeyMapping>, HashMap<u32, u32>), String> {
+) -> Result<CompiledKeymap, String> {
     use crate::DynamicLibrary;
 
     type ContextNew = unsafe extern "C" fn(u32) -> *mut c_void;
@@ -1637,6 +1634,10 @@ fn type_text_inner(text: &str, cancelled: Option<&AtomicBool>) -> Result<(), Str
         .map_err(|error| format!("synchronizing virtual keyboard events: {error}"))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the Wayland protocol state is borrowed piecewise from the caller"
+)]
 fn send_chunk(
     queue: &mut EventQueue<State>,
     state: &mut State,
@@ -1879,6 +1880,7 @@ xkb_symbols "test" { key <ESC> { [ Escape ] }; };
     }
 
     #[test]
+    #[ignore = "reads the live Hyprland keymap; run inside Hyprland with: cargo test -- --ignored"]
     fn compositor_keymap_maps_named_keys_for_the_active_layout() {
         let (Ok(settings), Ok(compositor_keymap)) =
             (current_hyprland_xkb_settings(), current_wayland_keymap())
@@ -1904,7 +1906,10 @@ xkb_symbols "test" { key <ESC> { [ Escape ] }; };
                 return;
             }
             Err(error) => assert!(
-                error.contains("does not match"),
+                error.contains("does not match")
+                    || error.contains("does not exactly match")
+                    // The live compositor can briefly expose a keymap without layouts.
+                    || error.contains("is outside the compositor keymap"),
                 "unexpected compositor keymap error: {error}"
             ),
         }

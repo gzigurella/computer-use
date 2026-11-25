@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import time
 
+from mcp_result import validate_tool_result
+
 
 class Client:
     def __init__(self, executable):
@@ -42,6 +44,8 @@ class Client:
                     if "error" in response:
                         raise RuntimeError(response["error"].get("message", "MCP request failed"))
                     result = response.get("result", {})
+                    if method == "tools/call":
+                        validate_tool_result(result)
                     if result.get("isError"):
                         details = result.get("structuredContent", {})
                         raise RuntimeError(str(details or result.get("content")))
@@ -157,7 +161,7 @@ onclick="document.title='Computer-use Firefox AT-SPI smoke — Saved'; document.
             mcp.start()
             for attempt in range(3):
                 try:
-                    start_arguments = {"backend": "hyprland-native", "overlay_monitor": monitor}
+                    start_arguments = {"backend": "hyprland-native", "output": monitor}
                     started = mcp.call("tools/call", {"name": "computer_start", "arguments": start_arguments})
                     break
                 except RuntimeError as error:

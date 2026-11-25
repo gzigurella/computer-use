@@ -12,6 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from mcp_result import validate_tool_result
+
 
 class McpProcess:
     def __init__(self, binary, env):
@@ -65,8 +67,7 @@ def observation_id(result):
 
 
 def structured_content(result):
-    if "content" not in result and "structuredContent" not in result:
-        return result
+    validate_tool_result(result)
     structured = result.get("structuredContent")
     if isinstance(structured, dict):
         return structured

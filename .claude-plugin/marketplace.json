@@ -1,0 +1,14 @@
+{
+  "name": "computer-use-linux",
+  "owner": {
+    "name": "Zigu"
+  },
+  "description": "Linux desktop computer use for Claude Code.",
+  "plugins": [
+    {
+      "name": "computer-use-linux",
+      "source": "./plugin",
+      "description": "Linux desktop control (Hyprland on Wayland) over MCP, with a skill for the observe-and-act workflow."
+    }
+  ]
+}

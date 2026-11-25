@@ -12,6 +12,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from mcp_result import validate_tool_result
+
 
 class X11Pointer:
     def __init__(self):
@@ -114,6 +116,7 @@ class McpProcess:
 
 
 def structured_content(result):
+    validate_tool_result(result)
     structured = result.get("structuredContent")
     if isinstance(structured, dict):
         return structured
@@ -225,7 +228,7 @@ def main():
                     {"session_id": session_id, "observation_id": observation, "action": action},
                 )
                 observation = observation_id(result)
-                assert structured_content(result).get("performed") is True, action
+                assert structured_content(result).get("performed") is True, (action, result)
 
             wait_for_event(event_log, receiver, lambda event: event.get("text") == "computer-use-linux-x11")
             wait_for_event(event_log, receiver, lambda event: event.get("key") == "F24")

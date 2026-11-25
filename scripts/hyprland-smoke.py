@@ -4,6 +4,7 @@
 import base64
 import argparse
 import json
+import math
 import os
 import selectors
 import signal
@@ -14,13 +15,14 @@ import tempfile
 import time
 from pathlib import Path
 
+from mcp_result import validate_tool_result
+
 POINTER_OVERLAY_SIZE = 12
 POINTER_HOTSPOT = (1, 1)
 
 
 def structured(result):
-    if "content" not in result and "structuredContent" not in result:
-        return result
+    validate_tool_result(result)
     value = result.get("structuredContent")
     if isinstance(value, dict):
         return value
@@ -356,7 +358,7 @@ def check_overlay_parent_death(binary, monitor):
             },
         )
         client.rpc("notifications/initialized", notification=True)
-        _, metadata = client.call("computer_start", {"overlay_monitor": monitor})
+        _, metadata = client.call("computer_start", {"output": monitor})
         if not metadata.get("capabilities", {}).get("visual_pointer_overlay"):
             raise RuntimeError("overlay lifecycle smoke could not start the visual pointer")
         active_monitor, entry = pointer_overlay()
@@ -397,7 +399,7 @@ def check_overlay_child_death(binary, monitor):
             },
         )
         client.rpc("notifications/initialized", notification=True)
-        _, metadata = client.call("computer_start", {"overlay_monitor": monitor})
+        _, metadata = client.call("computer_start", {"output": monitor})
         session_id = metadata["session_id"]
         active_monitor, entry = pointer_overlay()
         if active_monitor != monitor or not entry:
@@ -454,7 +456,7 @@ def check_native_runtime_without_path(binary, monitor, stale_bundle):
             },
         )
         client.rpc("notifications/initialized", notification=True)
-        _, metadata = client.call("computer_start", {"overlay_monitor": monitor})
+        _, metadata = client.call("computer_start", {"output": monitor})
         capabilities = metadata.get("capabilities", {})
         if metadata.get("active_backend") != "hyprland-native" or not metadata.get("capture_validated"):
             raise RuntimeError(f"native Hyprland did not start and capture with an empty PATH: {metadata}")
@@ -754,7 +756,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                     if unselected_metadata.get("session_id"):
                         mcp.call("computer_stop", {"session_id": unselected_metadata["session_id"]})
                     raise RuntimeError("computer_start did not require monitor selection for multiple outputs")
-            start_arguments = {"overlay_monitor": target_monitor["name"]} if len(all_monitors) > 1 else {}
+            start_arguments = {"output": target_monitor["name"]} if len(all_monitors) > 1 else {}
             started, metadata = mcp.call("computer_start", start_arguments)
             session_id = metadata["session_id"]
             forced_fallback_map = metadata.get("capabilities", {}).get("keyboard_layout", {})
@@ -770,8 +772,11 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                 target_monitor["x"], target_monitor["y"], expected_logical_width, expected_logical_height
             ):
                 raise RuntimeError(f"capture was not scoped to selected output {target_monitor['name']}: {display}")
-            if high_resolution_output and max(display["width"], display["height"]) != 3200:
-                raise RuntimeError(f"high-resolution capture was not downsampled to 3200 pixels: monitor={target_monitor}; display={display}")
+            if high_resolution_output and (
+                max(display["width"], display["height"]) != 2576
+                or math.ceil(display["width"] / 28) * math.ceil(display["height"] / 28) > 4784
+            ):
+                raise RuntimeError(f"high-resolution capture does not fit the default high-resolution image profile (2576 px, 4784 visual tokens): monitor={target_monitor}; display={display}")
             if not metadata.get("capabilities", {}).get("visual_pointer_overlay"):
                 raise RuntimeError(f"native mouse-arrow overlay is unavailable: {metadata.get('capabilities')}")
             initial_pointer = json.loads(subprocess.check_output(["hyprctl", "cursorpos", "-j"], text=True))
@@ -1352,7 +1357,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                 "computer_start",
                 {
                     "backend": "hyprland-grim",
-                    "overlay_monitor": target_monitor["name"],
+                    "output": target_monitor["name"],
                 },
             )
             session_id = fallback_metadata["session_id"]
@@ -1369,7 +1374,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
 
             if virtual_output:
                 _, second_metadata = mcp.call(
-                    "computer_start", {"overlay_monitor": virtual_output["name"]}
+                    "computer_start", {"output": virtual_output["name"]}
                 )
                 session_id = second_metadata["session_id"]
                 second_display = second_metadata["display"]
@@ -1519,7 +1524,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
             if headless_output:
                 layout_result += ", live output scale changes"
             if high_resolution_output:
-                layout_result += f", 3840-pixel capture downsampled to 3200, output format {virtual_output.get('currentFormat', 'unknown')}"
+                layout_result += f", 3840-pixel capture fitted to the 2576-pixel high-resolution image profile, output format {virtual_output.get('currentFormat', 'unknown')}"
             if xkb_layout_matrix:
                 layout_result += f", live XKB layout refresh {'→'.join(xkb_layout_matrix)}"
             layout_result += xkb_layout_result

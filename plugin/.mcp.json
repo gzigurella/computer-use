@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "computer-use-linux": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/scripts/computer-use-mcp.sh",
+      "args": [],
+      "env": {
+        "COMPUTER_USE_LINUX_IMAGE_PROFILE": "${user_config.image_profile}",
+        "COMPUTER_USE_LINUX_ACCESSIBILITY_DETAIL": "${user_config.accessibility_detail}",
+        "COMPUTER_USE_LINUX_AUTONOMOUS": "${user_config.autonomous}",
+        "COMPUTER_USE_LINUX_BINARY": "${user_config.server_binary}"
+      }
+    }
+  }
+}

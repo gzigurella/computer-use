@@ -16,6 +16,9 @@ use tokio::time::timeout;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue, Value};
 use zbus::{Connection, Proxy};
 
+/// A JPEG frame and the cursor position in it, when known.
+type FrameWithCursor = (Vec<u8>, Option<(i32, i32)>);
+
 const DESTINATION: &str = "org.freedesktop.portal.Desktop";
 const ROOT: &str = "/org/freedesktop/portal/desktop";
 const REQUEST_IFACE: &str = "org.freedesktop.portal.Request";
@@ -560,7 +563,7 @@ impl PortalSession {
         &self,
         quality: u8,
         max_dimension: u32,
-    ) -> Result<(Vec<u8>, Option<(i32, i32)>), String> {
+    ) -> Result<FrameWithCursor, String> {
         self.ensure_open()?;
         if !self.cursor_position_available() || self.cursor_metadata_failed.load(Ordering::Acquire)
         {
@@ -1112,20 +1115,15 @@ async fn start_remote_desktop(connection: &Connection) -> Result<PortalStart, Po
                     None
                 }
                 Ok(Err(_)) => None,
-                Ok(Ok(fd)) => {
-                    match OwnedFd::try_from(fd)
-                        .map_err(|error| error.to_string())
-                        .and_then(crate::eis::EisInput::connect)
-                    {
-                        Ok(input) => Some(Arc::new(Mutex::new(input))),
-                        Err(error) => {
-                            remote_pointer = false;
-                            remote_keyboard = false;
-                            eis_error = Some(error);
-                            None
-                        }
+                Ok(Ok(fd)) => match crate::eis::EisInput::connect(OwnedFd::from(fd)) {
+                    Ok(input) => Some(Arc::new(Mutex::new(input))),
+                    Err(error) => {
+                        remote_pointer = false;
+                        remote_keyboard = false;
+                        eis_error = Some(error);
+                        None
                     }
-                }
+                },
             }
         } else {
             None
@@ -1248,10 +1246,7 @@ async fn open_pipewire_remotes(
         .await
         .map_err(|_| "opening portal PipeWire remote timed out")?
         .map_err(|error| format!("opening portal PipeWire remote: {error}"))?;
-        fds.push(
-            OwnedFd::try_from(fd)
-                .map_err(|error| format!("converting portal PipeWire fd: {error}"))?,
-        );
+        fds.push(OwnedFd::from(fd));
     }
     Ok(fds)
 }
@@ -1311,6 +1306,10 @@ pub fn cursor_metadata_supported() -> bool {
     gstreamer_python().is_some()
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "the helper process takes independent stream, geometry and output parameters"
+)]
 fn cursor_metadata_capture(
     streams: &[PortalStream],
     stream_fds: &[(i32, i32)],
@@ -1322,7 +1321,7 @@ fn cursor_metadata_capture(
     logical_width: u32,
     logical_height: u32,
     max_dimension: u32,
-) -> Result<(Vec<u8>, Option<(i32, i32)>), String> {
+) -> Result<FrameWithCursor, String> {
     const HELPER: &str = r#"
 import gi, json, struct, sys, time
 gi.require_version('Gst', '1.0')
@@ -1519,321 +1518,6 @@ where
 
 fn request_handle_matches(predicted: &str, actual: &OwnedObjectPath) -> bool {
     actual.as_str() == predicted
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{
-        DESTINATION, PortalSession, PortalStartError, PortalStream, REQUEST_IFACE, ROOT,
-        portal_layout, portal_response as decode_portal_response, request_handle_matches,
-    };
-    use std::{
-        collections::HashMap,
-        fs::File,
-        os::fd::OwnedFd,
-        sync::{
-            Arc,
-            atomic::{AtomicUsize, Ordering},
-        },
-    };
-    use zbus::{
-        Connection,
-        message::Header,
-        object_server::SignalEmitter,
-        zvariant::{OwnedObjectPath, OwnedValue, StructureBuilder, Value},
-    };
-
-    static PORTAL_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
-    struct MockScreenCast(Arc<AtomicUsize>);
-
-    #[zbus::interface(name = "org.freedesktop.portal.ScreenCast")]
-    impl MockScreenCast {
-        #[zbus(property)]
-        fn available_cursor_modes(&self) -> u32 {
-            2
-        }
-
-        async fn create_session(
-            &self,
-            options: HashMap<String, OwnedValue>,
-            #[zbus(connection)] connection: &Connection,
-            #[zbus(header)] header: Header<'_>,
-        ) -> zbus::fdo::Result<OwnedObjectPath> {
-            let session = OwnedObjectPath::try_from(format!("{ROOT}/session/mock"))
-                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
-            connection
-                .object_server()
-                .at(session.as_str(), MockSession(Arc::clone(&self.0)))
-                .await
-                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
-            let mut results = HashMap::new();
-            results.insert(
-                "session_handle".into(),
-                OwnedValue::try_from(Value::new(session))
-                    .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
-            );
-            emit_response(connection, &header, &options, 0, results).await
-        }
-
-        async fn select_sources(
-            &self,
-            _session: OwnedObjectPath,
-            options: HashMap<String, OwnedValue>,
-            #[zbus(connection)] connection: &Connection,
-            #[zbus(header)] header: Header<'_>,
-        ) -> zbus::fdo::Result<OwnedObjectPath> {
-            emit_response(connection, &header, &options, 0, HashMap::new()).await
-        }
-
-        async fn start(
-            &self,
-            _session: OwnedObjectPath,
-            _parent_window: String,
-            options: HashMap<String, OwnedValue>,
-            #[zbus(connection)] connection: &Connection,
-            #[zbus(header)] header: Header<'_>,
-        ) -> zbus::fdo::Result<OwnedObjectPath> {
-            let mut stream_properties: HashMap<String, OwnedValue> = HashMap::new();
-            stream_properties.insert(
-                "size".into(),
-                OwnedValue::try_from(Value::new(
-                    StructureBuilder::new()
-                        .add_field(1280i32)
-                        .add_field(720i32)
-                        .build()
-                        .unwrap(),
-                ))
-                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
-            );
-            stream_properties.insert(
-                "position".into(),
-                OwnedValue::try_from(Value::new(
-                    StructureBuilder::new()
-                        .add_field(0i32)
-                        .add_field(0i32)
-                        .build()
-                        .unwrap(),
-                ))
-                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
-            );
-            stream_properties.insert("source_type".into(), OwnedValue::from(1u32));
-            let streams = vec![(1u32, stream_properties)];
-            let mut results = HashMap::new();
-            results.insert(
-                "streams".into(),
-                OwnedValue::try_from(Value::new(streams))
-                    .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
-            );
-            emit_response(connection, &header, &options, 0, results).await
-        }
-
-        fn open_pipe_wire_remote(
-            &self,
-            _session: OwnedObjectPath,
-            _options: HashMap<String, OwnedValue>,
-        ) -> zbus::fdo::Result<zbus::zvariant::OwnedFd> {
-            let fd: OwnedFd = File::open("/dev/null")
-                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?
-                .into();
-            Ok(fd.into())
-        }
-    }
-
-    struct MockSession(Arc<AtomicUsize>);
-
-    #[zbus::interface(name = "org.freedesktop.portal.Session")]
-    impl MockSession {
-        fn close(&self) -> zbus::fdo::Result<()> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        }
-
-        #[zbus(signal)]
-        async fn closed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
-    }
-
-    async fn emit_response(
-        connection: &Connection,
-        header: &Header<'_>,
-        options: &HashMap<String, OwnedValue>,
-        code: u32,
-        results: HashMap<String, OwnedValue>,
-    ) -> zbus::fdo::Result<OwnedObjectPath> {
-        let token: String = options
-            .get("handle_token")
-            .ok_or_else(|| zbus::fdo::Error::Failed("portal request omitted handle_token".into()))?
-            .try_clone()
-            .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?
-            .try_into()
-            .map_err(|error: zbus::zvariant::Error| zbus::fdo::Error::Failed(error.to_string()))?;
-        let sender = header.sender().unwrap().to_string();
-        let path = format!(
-            "{ROOT}/request/{}/{token}",
-            sender.trim_start_matches(':').replace([':', '.'], "_")
-        );
-        connection
-            .emit_signal(
-                Some(sender.as_str()),
-                path.as_str(),
-                REQUEST_IFACE,
-                "Response",
-                &(code, results),
-            )
-            .await
-            .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
-        OwnedObjectPath::try_from(path).map_err(|error| zbus::fdo::Error::Failed(error.to_string()))
-    }
-
-    struct MockRequest(Arc<AtomicUsize>);
-
-    #[zbus::interface(name = "org.freedesktop.portal.Request")]
-    impl MockRequest {
-        fn close(&self) -> zbus::fdo::Result<()> {
-            self.0.fetch_add(1, Ordering::Relaxed);
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn dropped_portal_request_is_closed_before_cleanup_returns() {
-        let _test_lock = PORTAL_TEST_LOCK.lock().await;
-        let close_count = Arc::new(AtomicUsize::new(0));
-        let path = OwnedObjectPath::try_from(format!("{ROOT}/request/mock/cancelled")).unwrap();
-        let _service = zbus::connection::Builder::session()
-            .unwrap()
-            .name(DESTINATION)
-            .unwrap()
-            .serve_at(path.as_str(), MockRequest(Arc::clone(&close_count)))
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-        let connection = Connection::session().await.unwrap();
-        drop(super::PortalRequestGuard {
-            connection,
-            request: path,
-            active: true,
-        });
-
-        super::await_request_cleanups().await;
-
-        assert_eq!(close_count.load(Ordering::Relaxed), 1);
-    }
-
-    #[tokio::test]
-    async fn mock_portal_exercises_screencast_fallback_and_session_close() {
-        let _test_lock = PORTAL_TEST_LOCK.lock().await;
-        let close_count = Arc::new(AtomicUsize::new(0));
-        let _service = zbus::connection::Builder::session()
-            .unwrap()
-            .name(DESTINATION)
-            .unwrap()
-            .serve_at(ROOT, MockScreenCast(Arc::clone(&close_count)))
-            .unwrap()
-            .build()
-            .await
-            .unwrap();
-
-        let portal = PortalSession::start(false).await.unwrap();
-        assert!(!portal.remote_desktop_active);
-        assert_eq!((portal.logical_width, portal.logical_height), (1280, 720));
-        assert_eq!(portal.source.as_deref(), Some("monitor"));
-        portal.close().await.unwrap();
-        assert_eq!(close_count.load(Ordering::Relaxed), 1);
-    }
-
-    fn stream(width: u32, height: u32, origin: Option<(i32, i32)>) -> PortalStream {
-        let (origin_x, origin_y) = origin.unwrap_or((0, 0));
-        PortalStream {
-            id: 1,
-            pipewire_serial: None,
-            width,
-            height,
-            origin_x,
-            origin_y,
-            position_available: origin.is_some(),
-            source: Some("monitor".into()),
-            mapping_id: None,
-        }
-    }
-
-    #[test]
-    fn detects_portals_that_return_a_legacy_request_handle() {
-        let predicted = "/org/freedesktop/portal/desktop/request/app/token";
-        let matching = OwnedObjectPath::try_from(predicted.to_owned()).unwrap();
-        let legacy = OwnedObjectPath::try_from(
-            "/org/freedesktop/portal/desktop/request/app/legacy".to_owned(),
-        )
-        .unwrap();
-        assert!(request_handle_matches(predicted, &matching));
-        assert!(!request_handle_matches(predicted, &legacy));
-    }
-
-    #[test]
-    fn compositor_fallback_never_swallows_portal_denial_or_timeout() {
-        assert!(
-            PortalStartError::Failed("portal is unavailable".into()).allows_compositor_fallback()
-        );
-        assert!(!PortalStartError::Denied("user cancelled".into()).allows_compositor_fallback());
-        assert!(!PortalStartError::Timeout("portal timed out".into()).allows_compositor_fallback());
-    }
-
-    #[test]
-    fn nonzero_portal_response_codes_are_denials() {
-        assert!(matches!(decode_portal_response(0, HashMap::new()), Ok(_)));
-        let error = decode_portal_response(1, HashMap::new()).unwrap_err();
-        assert!(matches!(error, PortalStartError::Denied(_)));
-        assert!(!error.allows_compositor_fallback());
-    }
-
-    #[test]
-    fn computes_layout_bounds_for_positioned_multi_monitor_streams() {
-        let mut streams = [
-            stream(100, 80, Some((-100, 20))),
-            stream(200, 120, Some((0, -10))),
-        ];
-        let layout = portal_layout(&mut streams, true).unwrap();
-        assert_eq!(
-            (
-                layout.origin_x,
-                layout.origin_y,
-                layout.width,
-                layout.height
-            ),
-            (-100, -10, 300, 120)
-        );
-        assert!(layout.position_available);
-        assert!(!layout.synthetic_layout);
-        assert_eq!(layout.source.as_deref(), Some("monitor"));
-    }
-
-    #[test]
-    fn tiles_unpositioned_multi_monitor_streams_and_marks_synthetic_layout() {
-        let mut streams = [stream(100, 80, None), stream(200, 120, None)];
-        let layout = portal_layout(&mut streams, true).unwrap();
-        assert_eq!(
-            (
-                layout.origin_x,
-                layout.origin_y,
-                layout.width,
-                layout.height
-            ),
-            (0, 0, 300, 120)
-        );
-        assert!(!layout.position_available);
-        assert!(layout.synthetic_layout);
-        assert_eq!(streams[1].origin_x, 100);
-    }
-
-    #[test]
-    fn rejects_multiple_streams_when_compositor_capture_is_unavailable() {
-        let mut streams = [
-            stream(100, 80, Some((0, 0))),
-            stream(100, 80, Some((100, 0))),
-        ];
-        assert!(portal_layout(&mut streams, false).is_err());
-    }
 }
 
 async fn session_connection() -> Result<Connection, String> {
@@ -2107,4 +1791,319 @@ fn compositor_available() -> bool {
         .arg("compositor")
         .output()
         .is_ok_and(|output| output.status.success())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DESTINATION, PortalSession, PortalStartError, PortalStream, REQUEST_IFACE, ROOT,
+        portal_layout, portal_response as decode_portal_response, request_handle_matches,
+    };
+    use std::{
+        collections::HashMap,
+        fs::File,
+        os::fd::OwnedFd,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+    };
+    use zbus::{
+        Connection,
+        message::Header,
+        object_server::SignalEmitter,
+        zvariant::{OwnedObjectPath, OwnedValue, StructureBuilder, Value},
+    };
+
+    static PORTAL_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    struct MockScreenCast(Arc<AtomicUsize>);
+
+    #[zbus::interface(name = "org.freedesktop.portal.ScreenCast")]
+    impl MockScreenCast {
+        #[zbus(property)]
+        fn available_cursor_modes(&self) -> u32 {
+            2
+        }
+
+        async fn create_session(
+            &self,
+            options: HashMap<String, OwnedValue>,
+            #[zbus(connection)] connection: &Connection,
+            #[zbus(header)] header: Header<'_>,
+        ) -> zbus::fdo::Result<OwnedObjectPath> {
+            let session = OwnedObjectPath::try_from(format!("{ROOT}/session/mock"))
+                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
+            connection
+                .object_server()
+                .at(session.as_str(), MockSession(Arc::clone(&self.0)))
+                .await
+                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
+            let mut results = HashMap::new();
+            results.insert(
+                "session_handle".into(),
+                OwnedValue::try_from(Value::new(session))
+                    .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
+            );
+            emit_response(connection, &header, &options, 0, results).await
+        }
+
+        async fn select_sources(
+            &self,
+            _session: OwnedObjectPath,
+            options: HashMap<String, OwnedValue>,
+            #[zbus(connection)] connection: &Connection,
+            #[zbus(header)] header: Header<'_>,
+        ) -> zbus::fdo::Result<OwnedObjectPath> {
+            emit_response(connection, &header, &options, 0, HashMap::new()).await
+        }
+
+        async fn start(
+            &self,
+            _session: OwnedObjectPath,
+            _parent_window: String,
+            options: HashMap<String, OwnedValue>,
+            #[zbus(connection)] connection: &Connection,
+            #[zbus(header)] header: Header<'_>,
+        ) -> zbus::fdo::Result<OwnedObjectPath> {
+            let mut stream_properties: HashMap<String, OwnedValue> = HashMap::new();
+            stream_properties.insert(
+                "size".into(),
+                OwnedValue::try_from(Value::new(
+                    StructureBuilder::new()
+                        .add_field(1280i32)
+                        .add_field(720i32)
+                        .build()
+                        .unwrap(),
+                ))
+                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
+            );
+            stream_properties.insert(
+                "position".into(),
+                OwnedValue::try_from(Value::new(
+                    StructureBuilder::new()
+                        .add_field(0i32)
+                        .add_field(0i32)
+                        .build()
+                        .unwrap(),
+                ))
+                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
+            );
+            stream_properties.insert("source_type".into(), OwnedValue::from(1u32));
+            let streams = vec![(1u32, stream_properties)];
+            let mut results = HashMap::new();
+            results.insert(
+                "streams".into(),
+                OwnedValue::try_from(Value::new(streams))
+                    .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?,
+            );
+            emit_response(connection, &header, &options, 0, results).await
+        }
+
+        fn open_pipe_wire_remote(
+            &self,
+            _session: OwnedObjectPath,
+            _options: HashMap<String, OwnedValue>,
+        ) -> zbus::fdo::Result<zbus::zvariant::OwnedFd> {
+            let fd: OwnedFd = File::open("/dev/null")
+                .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?
+                .into();
+            Ok(fd.into())
+        }
+    }
+
+    struct MockSession(Arc<AtomicUsize>);
+
+    #[zbus::interface(name = "org.freedesktop.portal.Session")]
+    impl MockSession {
+        fn close(&self) -> zbus::fdo::Result<()> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+
+        #[zbus(signal)]
+        async fn closed(emitter: &SignalEmitter<'_>) -> zbus::Result<()>;
+    }
+
+    async fn emit_response(
+        connection: &Connection,
+        header: &Header<'_>,
+        options: &HashMap<String, OwnedValue>,
+        code: u32,
+        results: HashMap<String, OwnedValue>,
+    ) -> zbus::fdo::Result<OwnedObjectPath> {
+        let token: String = options
+            .get("handle_token")
+            .ok_or_else(|| zbus::fdo::Error::Failed("portal request omitted handle_token".into()))?
+            .try_clone()
+            .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?
+            .try_into()
+            .map_err(|error: zbus::zvariant::Error| zbus::fdo::Error::Failed(error.to_string()))?;
+        let sender = header.sender().unwrap().to_string();
+        let path = format!(
+            "{ROOT}/request/{}/{token}",
+            sender.trim_start_matches(':').replace([':', '.'], "_")
+        );
+        connection
+            .emit_signal(
+                Some(sender.as_str()),
+                path.as_str(),
+                REQUEST_IFACE,
+                "Response",
+                &(code, results),
+            )
+            .await
+            .map_err(|error| zbus::fdo::Error::Failed(error.to_string()))?;
+        OwnedObjectPath::try_from(path).map_err(|error| zbus::fdo::Error::Failed(error.to_string()))
+    }
+
+    struct MockRequest(Arc<AtomicUsize>);
+
+    #[zbus::interface(name = "org.freedesktop.portal.Request")]
+    impl MockRequest {
+        fn close(&self) -> zbus::fdo::Result<()> {
+            self.0.fetch_add(1, Ordering::Relaxed);
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn dropped_portal_request_is_closed_before_cleanup_returns() {
+        let _test_lock = PORTAL_TEST_LOCK.lock().await;
+        let close_count = Arc::new(AtomicUsize::new(0));
+        let path = OwnedObjectPath::try_from(format!("{ROOT}/request/mock/cancelled")).unwrap();
+        let _service = zbus::connection::Builder::session()
+            .unwrap()
+            .name(DESTINATION)
+            .unwrap()
+            .serve_at(path.as_str(), MockRequest(Arc::clone(&close_count)))
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+        let connection = Connection::session().await.unwrap();
+        drop(super::PortalRequestGuard {
+            connection,
+            request: path,
+            active: true,
+        });
+
+        super::await_request_cleanups().await;
+
+        assert_eq!(close_count.load(Ordering::Relaxed), 1);
+    }
+
+    #[tokio::test]
+    async fn mock_portal_exercises_screencast_fallback_and_session_close() {
+        let _test_lock = PORTAL_TEST_LOCK.lock().await;
+        let close_count = Arc::new(AtomicUsize::new(0));
+        let _service = zbus::connection::Builder::session()
+            .unwrap()
+            .name(DESTINATION)
+            .unwrap()
+            .serve_at(ROOT, MockScreenCast(Arc::clone(&close_count)))
+            .unwrap()
+            .build()
+            .await
+            .unwrap();
+
+        let portal = PortalSession::start(false).await.unwrap();
+        assert!(!portal.remote_desktop_active);
+        assert_eq!((portal.logical_width, portal.logical_height), (1280, 720));
+        assert_eq!(portal.source.as_deref(), Some("monitor"));
+        portal.close().await.unwrap();
+        assert_eq!(close_count.load(Ordering::Relaxed), 1);
+    }
+
+    fn stream(width: u32, height: u32, origin: Option<(i32, i32)>) -> PortalStream {
+        let (origin_x, origin_y) = origin.unwrap_or((0, 0));
+        PortalStream {
+            id: 1,
+            pipewire_serial: None,
+            width,
+            height,
+            origin_x,
+            origin_y,
+            position_available: origin.is_some(),
+            source: Some("monitor".into()),
+            mapping_id: None,
+        }
+    }
+
+    #[test]
+    fn detects_portals_that_return_a_legacy_request_handle() {
+        let predicted = "/org/freedesktop/portal/desktop/request/app/token";
+        let matching = OwnedObjectPath::try_from(predicted.to_owned()).unwrap();
+        let legacy = OwnedObjectPath::try_from(
+            "/org/freedesktop/portal/desktop/request/app/legacy".to_owned(),
+        )
+        .unwrap();
+        assert!(request_handle_matches(predicted, &matching));
+        assert!(!request_handle_matches(predicted, &legacy));
+    }
+
+    #[test]
+    fn compositor_fallback_never_swallows_portal_denial_or_timeout() {
+        assert!(
+            PortalStartError::Failed("portal is unavailable".into()).allows_compositor_fallback()
+        );
+        assert!(!PortalStartError::Denied("user cancelled".into()).allows_compositor_fallback());
+        assert!(!PortalStartError::Timeout("portal timed out".into()).allows_compositor_fallback());
+    }
+
+    #[test]
+    fn nonzero_portal_response_codes_are_denials() {
+        assert!(decode_portal_response(0, HashMap::new()).is_ok());
+        let error = decode_portal_response(1, HashMap::new()).unwrap_err();
+        assert!(matches!(error, PortalStartError::Denied(_)));
+        assert!(!error.allows_compositor_fallback());
+    }
+
+    #[test]
+    fn computes_layout_bounds_for_positioned_multi_monitor_streams() {
+        let mut streams = [
+            stream(100, 80, Some((-100, 20))),
+            stream(200, 120, Some((0, -10))),
+        ];
+        let layout = portal_layout(&mut streams, true).unwrap();
+        assert_eq!(
+            (
+                layout.origin_x,
+                layout.origin_y,
+                layout.width,
+                layout.height
+            ),
+            (-100, -10, 300, 120)
+        );
+        assert!(layout.position_available);
+        assert!(!layout.synthetic_layout);
+        assert_eq!(layout.source.as_deref(), Some("monitor"));
+    }
+
+    #[test]
+    fn tiles_unpositioned_multi_monitor_streams_and_marks_synthetic_layout() {
+        let mut streams = [stream(100, 80, None), stream(200, 120, None)];
+        let layout = portal_layout(&mut streams, true).unwrap();
+        assert_eq!(
+            (
+                layout.origin_x,
+                layout.origin_y,
+                layout.width,
+                layout.height
+            ),
+            (0, 0, 300, 120)
+        );
+        assert!(!layout.position_available);
+        assert!(layout.synthetic_layout);
+        assert_eq!(streams[1].origin_x, 100);
+    }
+
+    #[test]
+    fn rejects_multiple_streams_when_compositor_capture_is_unavailable() {
+        let mut streams = [
+            stream(100, 80, Some((0, 0))),
+            stream(100, 80, Some((100, 0))),
+        ];
+        assert!(portal_layout(&mut streams, false).is_err());
+    }
 }

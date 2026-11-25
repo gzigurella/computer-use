@@ -1,21 +1,6 @@
 #!/bin/sh
-set -eu
-
-while IFS= read -r variable; do
-	case "$variable" in
-		WAYLAND_DISPLAY=*|HYPRLAND_INSTANCE_SIGNATURE=*|XDG_RUNTIME_DIR=*|DBUS_SESSION_BUS_ADDRESS=*|XDG_CURRENT_DESKTOP=*|XDG_SESSION_TYPE=*|DISPLAY=*)
-			export "$variable"
-			;;
-	esac
-done <<EOF
-$(systemctl --user show-environment)
-EOF
-
+# Compatibility entry point for MCP clients configured with this path (for
+# example Codex or the project .mcp.json). The launcher lives with the Claude
+# Code plugin so that an installed plugin carries its own copy.
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
-server_binary=${COMPUTER_USE_LINUX_BINARY:-"$repo_root/target/x86_64-unknown-linux-musl/release/computer-use-linux"}
-if [ ! -x "$server_binary" ]; then
-	printf '%s\n' "computer-use-linux binary not found: $server_binary" >&2
-	exit 1
-fi
-exec "$server_binary" --stdio
+exec "$script_dir/../plugin/scripts/computer-use-mcp.sh" "$@"

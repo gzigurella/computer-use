@@ -258,7 +258,10 @@ pub fn monitor_choices() -> Result<Vec<Value>, String> {
         .collect()
 }
 
-fn monitor_geometry_and_scale(name: &str) -> Result<((i32, i32, u32, u32), f64), String> {
+/// Monitor origin and size in layout pixels.
+type MonitorGeometry = (i32, i32, u32, u32);
+
+fn monitor_geometry_and_scale(name: &str) -> Result<(MonitorGeometry, f64), String> {
     let monitor = active_monitors()?
         .into_iter()
         .find(|monitor| monitor["name"] == name)
@@ -607,10 +610,10 @@ impl Dispatch<WlOutput, Arc<Mutex<String>>> for Globals {
         _: &Connection,
         _: &QueueHandle<Self>,
     ) {
-        if let wl_output::Event::Name { name: output_name } = event {
-            if let Ok(mut name) = name.lock() {
-                *name = output_name;
-            }
+        if let wl_output::Event::Name { name: output_name } = event
+            && let Ok(mut name) = name.lock()
+        {
+            *name = output_name;
         }
     }
 }
@@ -748,14 +751,13 @@ fn inside_pointer(x: f64, y: f64) -> bool {
     let x = x / POINTER_SCALE;
     let y = y / POINTER_SCALE;
     let mut inside = false;
-    let mut previous = POINTER_SHAPE.len() - 1;
-    for current in 0..POINTER_SHAPE.len() {
-        let (x1, y1) = POINTER_SHAPE[current];
-        let (x2, y2) = POINTER_SHAPE[previous];
+    let mut previous = POINTER_SHAPE[POINTER_SHAPE.len() - 1];
+    for &(x1, y1) in POINTER_SHAPE.iter() {
+        let (x2, y2) = previous;
         if (y1 > y) != (y2 > y) && x < (x2 - x1) * (y - y1) / (y2 - y1) + x1 {
             inside = !inside;
         }
-        previous = current;
+        previous = (x1, y1);
     }
     inside
 }
@@ -1124,11 +1126,11 @@ mod tests {
         let shadow_min_y = shadowed.iter().map(|(_, y)| y).min().unwrap();
         let shadow_max_y = shadowed.iter().map(|(_, y)| y).max().unwrap();
         assert!(
-            shadow_max_x - shadow_min_x + 1 <= 12,
+            shadow_max_x - shadow_min_x < 12,
             "pointer shadow is too wide: {shadow_min_x}..={shadow_max_x}"
         );
         assert!(
-            shadow_max_y - shadow_min_y + 1 <= 12,
+            shadow_max_y - shadow_min_y < 12,
             "pointer shadow is too tall: {shadow_min_y}..={shadow_max_y}"
         );
     }
