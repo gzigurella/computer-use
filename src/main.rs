@@ -256,6 +256,7 @@ struct DesktopSession {
     pointer_overlay: Option<Arc<std::sync::Mutex<hyprland_overlay::PointerOverlay>>>,
     pointer_overlay_monitor: Option<String>,
     image_limits: ImageLimits,
+    accessibility_detail: AccessibilityDetail,
 }
 
 #[derive(Clone, Debug)]
@@ -839,7 +840,7 @@ mod tests {
         BACKEND_TARGETS, DesktopState, TARGETS, handle_request, requested_output,
         resolve_requested_backend, server_instructions,
     };
-    use serde_json::json;
+    use serde_json::{Value, json};
     use std::{io::Read, process::Stdio};
 
     #[test]
@@ -914,6 +915,55 @@ mod tests {
                 .unwrap()
                 .contains("D-Bus")
         );
+    }
+
+    #[test]
+    fn compact_accessibility_keeps_actionable_nodes_within_budget() {
+        use super::{AccessibilityDetail, compact_accessibility};
+        let node = |index: usize, on_screen: bool| {
+            json!({
+                "element_id":format!("/org/a11y/atspi/accessible/{index}"),
+                "name":"x".repeat(300),
+                "role":"push button",
+                "process_id":42,
+                "accessible_id":null,
+                "description":"",
+                "states":["enabled","focusable","showing","visible","focused"],
+                "bounds":{"x":1,"y":2,"width":3,"height":4,"coordinate_space":"screen"},
+                "image_bounds":if on_screen { json!({"x":1,"y":2,"width":3,"height":4,"coordinate_space":"captured output pixels"}) } else { Value::Null },
+                "text":"t".repeat(600),
+                "text_truncated":false,
+                "actions":["click"]
+            })
+        };
+        let snapshot = json!({"available":true,"nodes":[node(0, true), node(1, false)]});
+        let compact = compact_accessibility(&snapshot);
+        let nodes = compact["nodes"].as_array().unwrap();
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(compact["omitted_offscreen"], 1);
+        let first = &nodes[0];
+        assert_eq!(first["name"].as_str().unwrap().chars().count(), 100);
+        assert_eq!(first["text"].as_str().unwrap().chars().count(), 200);
+        assert_eq!(first["text_truncated"], true);
+        assert_eq!(first["states"], json!(["focused"]));
+        assert_eq!(first["actions"], json!(["click"]));
+        assert_eq!(first["process_id"], 42);
+        assert!(first.get("accessible_id").is_none() && first.get("bounds").is_none());
+
+        let many = json!({"available":true,"nodes":(0..400).map(|index| node(index, true)).collect::<Vec<_>>()});
+        let compact = compact_accessibility(&many);
+        let encoded = serde_json::to_vec(&compact).unwrap().len();
+        assert!(encoded < 30 * 1024, "compact tree is {encoded} bytes");
+        assert_eq!(compact["truncated"], true);
+        assert!(compact["omitted_over_budget"].as_u64().unwrap() > 0);
+        let full = AccessibilityDetail::Full.present(&many);
+        assert_eq!(full["nodes"].as_array().unwrap().len(), 400);
+        assert_eq!(AccessibilityDetail::None.present(&many)["node_count"], 400);
+
+        let disabled = json!({"available":true,"nodes":[{"element_id":"/a","name":"n","role":"r","states":["showing"],"image_bounds":{"x":0,"y":0,"width":1,"height":1},"actions":[]}]});
+        let compact = compact_accessibility(&disabled);
+        assert_eq!(compact["nodes"][0]["states"], json!(["disabled"]));
+        assert!(compact["nodes"][0].get("actions").is_none());
     }
 
     #[test]

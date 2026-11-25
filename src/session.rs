@@ -114,6 +114,8 @@ pub(crate) async fn start_session(args: &Value, state: SharedState) -> Result<Va
     }
     let requested_output = requested_output(args)?;
     let image_limits = ImageLimits::from_request(args)?;
+    let accessibility_detail = AccessibilityDetail::parse(args.get("accessibility_detail"))?
+        .unwrap_or(AccessibilityDetail::Compact);
     let mut notes = info["notes"].clone();
     let hyprland_monitor = if info["capabilities"]["hyprland_adapter"] == true {
         Some(hyprland_overlay::select_monitor(requested_output)?)
@@ -677,6 +679,7 @@ pub(crate) async fn start_session(args: &Value, state: SharedState) -> Result<Va
         pointer_overlay,
         pointer_overlay_monitor: pointer_overlay_monitor.clone(),
         image_limits,
+        accessibility_detail,
     });
     let mut rollback = SessionStartRollback::new(state.clone(), id.clone());
     capabilities["visual_pointer_overlay"] = json!(pointer_overlay_monitor.is_some());
@@ -684,6 +687,7 @@ pub(crate) async fn start_session(args: &Value, state: SharedState) -> Result<Va
     let mut session_info = json!({"session_id":id,"wayland_mode":wayland_mode,"active_backend":active_backend,"active_target":active_target,"capture_validated":true,"capabilities":capabilities,"notes":notes});
     session_info["selected_output"] = json!(selected_output);
     session_info["image_limits"] = image_limits.describe();
+    session_info["accessibility_detail"] = json!(accessibility_detail.name());
     drop(guard);
     match observe(&json!({"session_id":id}), state.clone()).await {
         Ok(mut initial_observation) => {
@@ -799,10 +803,11 @@ pub(crate) async fn stop_session(args: &Value, state: SharedState) -> Result<Val
 
 pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, String> {
     let id = required_string(args, "session_id")?;
+    let requested_detail = AccessibilityDetail::parse(args.get("accessibility_detail"))?;
     let action_lock = state.lock().await.action_lock.clone();
     let _action_guard = action_lock.lock().await;
     await_held_input_cleanups().await;
-    let (backend, pointer_overlay, pointer_overlay_monitor, image_limits) = {
+    let (backend, pointer_overlay, pointer_overlay_monitor, image_limits, accessibility_detail) = {
         let mut guard = state.lock().await;
         let session = guard.session.as_mut().ok_or("no desktop session is open")?;
         if session.id != id {
@@ -814,6 +819,7 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
             session.pointer_overlay.clone(),
             session.pointer_overlay_monitor.clone(),
             session.image_limits,
+            requested_detail.unwrap_or(session.accessibility_detail),
         )
     };
     let captured_at = std::time::Instant::now();
@@ -987,7 +993,7 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
         "accessibility_actions_available":snapshot["available"] == true && origin_known && accessibility_mapping.unmapped_process.is_none(),
         "accessibility_actions_reason":accessibility_actions_reason,
         "accessibility_coordinate_mapping_available":origin_known && accessibility_mapping.unmapped_process.is_none(),
-        "accessibility":snapshot
+        "accessibility":accessibility_detail.present(&snapshot)
     });
     let pointer_overlay_alive = if let Some(overlay) = pointer_overlay.as_ref() {
         let overlay = overlay.clone();
@@ -1054,6 +1060,137 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
         session.observation = Some((observation_id.clone(), observation));
     }
     Ok(observation_result(metadata, image))
+}
+
+/// How much of the accessibility tree an Observation returns to the agent.
+/// The server always keeps the full tree to validate accessibility actions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AccessibilityDetail {
+    Compact,
+    Full,
+    None,
+}
+
+/// Bytes of compact accessibility JSON per Observation, about 7,000 tokens.
+const COMPACT_ACCESSIBILITY_BUDGET: usize = 24 * 1024;
+const COMPACT_STATES: &[&str] = &[
+    "focused", "active", "checked", "selected", "expanded", "editable",
+];
+
+impl AccessibilityDetail {
+    pub(crate) fn parse(value: Option<&Value>) -> Result<Option<Self>, String> {
+        match value {
+            None | Some(Value::Null) => Ok(None),
+            Some(Value::String(name)) => match name.as_str() {
+                "compact" => Ok(Some(Self::Compact)),
+                "full" => Ok(Some(Self::Full)),
+                "none" => Ok(Some(Self::None)),
+                _ => Err("accessibility_detail must be compact, full, or none".into()),
+            },
+            Some(_) => Err("accessibility_detail must be a string".into()),
+        }
+    }
+
+    pub(crate) fn name(self) -> &'static str {
+        match self {
+            Self::Compact => "compact",
+            Self::Full => "full",
+            Self::None => "none",
+        }
+    }
+
+    /// The accessibility JSON shown to the agent for a full snapshot.
+    pub(crate) fn present(self, snapshot: &Value) -> Value {
+        match self {
+            Self::Full => {
+                let mut full = snapshot.clone();
+                full["detail"] = json!("full");
+                full
+            }
+            Self::None => json!({
+                "available":snapshot["available"],
+                "detail":"none",
+                "node_count":snapshot["nodes"].as_array().map_or(0, Vec::len)
+            }),
+            Self::Compact => compact_accessibility(snapshot),
+        }
+    }
+}
+
+fn truncated_chars(text: &str, limit: usize) -> (String, bool) {
+    let mut chars = text.chars();
+    let kept = chars.by_ref().take(limit).collect::<String>();
+    (kept, chars.next().is_some())
+}
+
+/// On-screen nodes only, with the fields an agent acts on, within a fixed byte budget.
+pub(crate) fn compact_accessibility(snapshot: &Value) -> Value {
+    let mut compact = json!({
+        "available":snapshot["available"],
+        "detail":"compact",
+        "coordinate_space":"screenshot pixels",
+        "nodes":[]
+    });
+    if let Some(error) = snapshot.get("error").filter(|error| !error.is_null()) {
+        compact["error"] = error.clone();
+    }
+    let mut nodes = Vec::new();
+    let (mut used, mut offscreen, mut over_budget) = (0usize, 0usize, 0usize);
+    for node in snapshot["nodes"].as_array().into_iter().flatten() {
+        let Some(bounds) = node["image_bounds"].as_object() else {
+            offscreen += 1;
+            continue;
+        };
+        let (name, _) = truncated_chars(node["name"].as_str().unwrap_or_default(), 100);
+        let mut entry = json!({
+            "element_id":node["element_id"],
+            "role":node["role"],
+            "name":name,
+            "process_id":node["process_id"],
+            "image_bounds":{"x":bounds.get("x"),"y":bounds.get("y"),"width":bounds.get("width"),"height":bounds.get("height")}
+        });
+        if node["actions"]
+            .as_array()
+            .is_some_and(|actions| !actions.is_empty())
+        {
+            entry["actions"] = node["actions"].clone();
+        }
+        let states = node["states"].as_array().cloned().unwrap_or_default();
+        let has = |label: &str| states.iter().any(|state| state == label);
+        let mut kept = COMPACT_STATES
+            .iter()
+            .filter(|label| has(label))
+            .map(|label| json!(label))
+            .collect::<Vec<_>>();
+        if !states.is_empty() && !has("enabled") && !has("sensitive") {
+            kept.push(json!("disabled"));
+        }
+        if !kept.is_empty() {
+            entry["states"] = Value::Array(kept);
+        }
+        if let Some(description) = node["description"].as_str().filter(|text| !text.is_empty()) {
+            entry["description"] = json!(truncated_chars(description, 100).0);
+        }
+        if let Some(text) = node["text"].as_str().filter(|text| !text.is_empty()) {
+            let (text, cut) = truncated_chars(text, 200);
+            entry["text"] = json!(text);
+            if cut || node["text_truncated"] == true {
+                entry["text_truncated"] = json!(true);
+            }
+        }
+        let size = serde_json::to_vec(&entry).map_or(usize::MAX, |bytes| bytes.len() + 1);
+        if used.saturating_add(size) > COMPACT_ACCESSIBILITY_BUDGET {
+            over_budget += 1;
+            continue;
+        }
+        used += size;
+        nodes.push(entry);
+    }
+    compact["nodes"] = Value::Array(nodes);
+    compact["omitted_offscreen"] = json!(offscreen);
+    compact["omitted_over_budget"] = json!(over_budget);
+    compact["truncated"] = json!(over_budget > 0 || snapshot["truncated"] == true);
+    compact
 }
 
 pub(crate) fn bound_accessibility_snapshot(snapshot: &mut Value) {
