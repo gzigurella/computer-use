@@ -2,9 +2,54 @@
   "name": "computer-use-linux",
   "version": "0.1.0",
   "description": "See and control a Linux desktop (Hyprland on Wayland) through the computer-use-linux MCP server: screenshots, pointer, keyboard, scrolling, clipboard and AT-SPI accessibility.",
-  "author": { "name": "Zigu" },
+  "author": {
+    "name": "Zigu"
+  },
   "homepage": "https://github.com/gzigurella/computer-use",
   "repository": "https://github.com/gzigurella/computer-use",
   "license": "MIT",
-  "keywords": ["mcp", "computer-use", "linux", "wayland", "hyprland", "desktop"]
+  "keywords": [
+    "mcp",
+    "computer-use",
+    "linux",
+    "wayland",
+    "hyprland",
+    "desktop"
+  ],
+  "userConfig": {
+    "image_profile": {
+      "type": "string",
+      "title": "Screenshot image profile",
+      "description": "Screenshot size limits matched to the model, so its coordinates are screenshot pixels: high-resolution for Claude 4.7 and later, standard for older Claude models, full for up to 3200 px.",
+      "options": [
+        "high-resolution",
+        "standard",
+        "full"
+      ],
+      "default": "high-resolution"
+    },
+    "accessibility_detail": {
+      "type": "string",
+      "title": "Accessibility tree detail",
+      "description": "compact keeps observations within Claude Code's tool-output limits; full returns every node and field; none omits the tree.",
+      "options": [
+        "compact",
+        "full",
+        "none"
+      ],
+      "default": "compact"
+    },
+    "autonomous": {
+      "type": "boolean",
+      "title": "Autonomous mode",
+      "description": "Only for a dedicated machine: tell the agent not to ask for confirmation before ordinary desktop actions.",
+      "default": false
+    },
+    "server_binary": {
+      "type": "string",
+      "title": "Server binary path",
+      "description": "Path to computer-use-linux. Leave empty to search the install locations and PATH.",
+      "default": ""
+    }
+  }
 }

@@ -69,6 +69,19 @@ The script verifies the checksum before installing. Other architectures build fr
 
 The plugin's tools are named `mcp__plugin_computer-use-linux_computer-use-linux__computer_status` and so on. To try the plugin from a checkout without installing it, run `claude --plugin-dir ./plugin`.
 
+The plugin's options are set with `/plugin configure computer-use-linux@computer-use-linux` (or `claude plugin install … --config KEY=VALUE`):
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `image_profile` | `high-resolution` | Default screenshot limits (`COMPUTER_USE_LINUX_IMAGE_PROFILE`) |
+| `accessibility_detail` | `compact` | Default accessibility tree detail (`COMPUTER_USE_LINUX_ACCESSIBILITY_DETAIL`) |
+| `autonomous` | `false` | Autonomous confirmation policy (`COMPUTER_USE_LINUX_AUTONOMOUS`) |
+| `server_binary` | empty | Server binary path (`COMPUTER_USE_LINUX_BINARY`); empty searches the usual locations |
+
+Arguments passed to `computer_start` override these defaults.
+
+The plugin's skill eval runs against mocked tools, so it needs no desktop: `claude plugin eval ./plugin`.
+
 **Claude Code without the plugin.** The repository ships a project-scoped [`.mcp.json`](.mcp.json), so running `claude` from this checkout offers the `computer-use-linux` server after you approve it. To make it available in every project instead:
 
 ```sh

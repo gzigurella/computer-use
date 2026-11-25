@@ -1,0 +1,1 @@
+{"session_id":"{{input.session_id}}","observation_id":"o-2","selected_output":"eDP-1","display":{"width":1920,"height":1080,"coordinate_space":"screenshot pixels"},"active_window":{"class":"org.gnome.TextEditor","title":"notes.txt - Text Editor","pid":4242},"accessibility":{"available":true,"detail":"compact","nodes":[]},"accessibility_actions_available":true,"capabilities":{}}

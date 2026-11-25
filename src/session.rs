@@ -114,8 +114,15 @@ pub(crate) async fn start_session(args: &Value, state: SharedState) -> Result<Va
     }
     let requested_output = requested_output(args)?;
     let image_limits = ImageLimits::from_request(args)?;
-    let accessibility_detail = AccessibilityDetail::parse(args.get("accessibility_detail"))?
-        .unwrap_or(AccessibilityDetail::Compact);
+    let accessibility_detail = match AccessibilityDetail::parse(args.get("accessibility_detail"))? {
+        Some(detail) => detail,
+        None => match std::env::var(ACCESSIBILITY_DETAIL_ENV) {
+            Ok(name) if !name.is_empty() => AccessibilityDetail::parse(Some(&json!(name)))
+                .map_err(|_| format!("{ACCESSIBILITY_DETAIL_ENV} must be compact, full, or none"))?
+                .unwrap_or(AccessibilityDetail::Compact),
+            _ => AccessibilityDetail::Compact,
+        },
+    };
     let mut notes = info["notes"].clone();
     let hyprland_monitor = if info["capabilities"]["hyprland_adapter"] == true {
         Some(hyprland_overlay::select_monitor(requested_output)?)
@@ -1070,6 +1077,8 @@ pub(crate) enum AccessibilityDetail {
     Full,
     None,
 }
+
+pub(crate) const ACCESSIBILITY_DETAIL_ENV: &str = "COMPUTER_USE_LINUX_ACCESSIBILITY_DETAIL";
 
 /// Bytes of compact accessibility JSON per Observation, about 7,000 tokens.
 const COMPACT_ACCESSIBILITY_BUDGET: usize = 24 * 1024;

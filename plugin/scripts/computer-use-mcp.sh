@@ -18,6 +18,16 @@ done <<EOF
 $(systemctl --user show-environment 2>/dev/null || true)
 EOF
 
+# Plugin options arrive as ${user_config.*} substitutions; treat an empty or
+# unsubstituted value as unset so the server applies its own default.
+for option in COMPUTER_USE_LINUX_BINARY COMPUTER_USE_LINUX_IMAGE_PROFILE \
+	COMPUTER_USE_LINUX_ACCESSIBILITY_DETAIL COMPUTER_USE_LINUX_AUTONOMOUS; do
+	eval "value=\${$option:-}"
+	case "$value" in
+		''|*'${'*) unset "$option" ;;
+	esac
+done
+
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 # Inside a source checkout this script lives in plugin/scripts/; an installed
 # Claude Code plugin is copied on its own, so the checkout paths simply do not exist.
