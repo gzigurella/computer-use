@@ -418,6 +418,11 @@ pub(crate) async fn desktop_status() -> Value {
     status["capabilities"]["wtype_available"] = json!(virtual_keyboard);
     status["capabilities"]["native_wayland_clipboard"] = json!(native_wayland_clipboard);
     status["capabilities"]["accessibility_probe_error"] = json!(atspi_probe_error);
+    let remedy = accessibility_remedy(atspi_probe_error.as_deref());
+    if let (Some(remedy), Some(notes)) = (&remedy, status["notes"].as_array_mut()) {
+        notes.push(json!(remedy));
+    }
+    status["capabilities"]["accessibility_remedy"] = json!(remedy);
     status["recommended_backend"] = json!(recommended_backend);
     status["targets"] = json!(targets);
     status["recommended_target"] = json!(recommended_target);
@@ -537,9 +542,32 @@ pub(crate) fn capability_notes(
         );
     }
     if !atspi {
-        notes.push("AT-SPI is unavailable; enable the desktop accessibility bus and the active application's accessibility bridge.".into());
+        notes.push(format!("AT-SPI is unavailable. {}", ATSPI_BRIDGES));
     }
     notes
+}
+
+const ATSPI_BRIDGES: &str = "GTK and Qt 6 applications expose their accessibility tree once the bus is enabled; Chromium and Electron applications need --force-renderer-accessibility.";
+
+/// Turns an AT-SPI probe error into the most likely cause and its fix.
+pub(crate) fn accessibility_remedy(error: Option<&str>) -> Option<String> {
+    let error = error?;
+    let remedy = if error.contains("at-spi") && error.contains("Connection refused") {
+        "The accessibility bus socket exists but its broker no longer accepts connections, which can happen after a D-Bus or at-spi2-core upgrade reloads the bus. Restart it with `systemctl --user restart at-spi-dbus-bus.service`, then restart the applications you want to control."
+    } else if error.contains("ServiceUnknown")
+        || error.contains("org.a11y.Bus")
+        || error.contains("not provided by any .service files")
+    {
+        "No accessibility bus service is available. Install at-spi2-core (it provides org.a11y.Bus), then log in again."
+    } else if error.contains("DBUS_SESSION_BUS_ADDRESS")
+        || error.contains("session bus")
+        || error.contains("No such file or directory")
+    {
+        "The server cannot reach the Login Session's D-Bus. Start it from the desktop session or through scripts/computer-use-mcp.sh, which imports DBUS_SESSION_BUS_ADDRESS from systemd."
+    } else {
+        "Check that at-spi2-core is installed and its bus is running (`systemctl --user status at-spi-dbus-bus.service`)."
+    };
+    Some(remedy.to_owned())
 }
 
 pub(crate) fn command_exists(name: &str) -> bool {

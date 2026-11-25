@@ -91,6 +91,18 @@ args = []
 
 Set `COMPUTER_USE_LINUX_BINARY` in the MCP entry's `env` table (`env` in `.mcp.json`, or `-e` with `claude mcp add`) to choose another server binary.
 
+## Accessibility troubleshooting
+
+AT-SPI actions need the desktop accessibility bus (`at-spi2-core`) and an application whose toolkit bridge is active. When it is missing, `computer_status` reports `accessibility_probe_error` together with `capabilities.accessibility_remedy`, a diagnosis of the likely cause and its fix. Visual, screenshot-based control keeps working either way.
+
+| Symptom in `accessibility_probe_error` | Cause | Fix |
+|---|---|---|
+| `…/at-spi/bus_0`: Connection refused | The bus broker stopped accepting connections, typically after a D-Bus or at-spi2-core upgrade reloaded its configuration | `systemctl --user restart at-spi-dbus-bus.service`, then restart the applications to control |
+| `org.a11y.Bus` was not provided / ServiceUnknown | at-spi2-core is not installed | Install `at-spi2-core` and log in again |
+| Session bus unreachable | The server runs without the Login Session's `DBUS_SESSION_BUS_ADDRESS` | Launch through `scripts/computer-use-mcp.sh`, which imports it from systemd |
+
+GTK and Qt 6 applications expose their tree once the bus is enabled. Chromium and Electron applications need `--force-renderer-accessibility`.
+
 ## Source layout
 
 | Module | Responsibility |

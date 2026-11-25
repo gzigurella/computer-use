@@ -896,6 +896,27 @@ mod tests {
     }
 
     #[test]
+    fn accessibility_remedy_names_the_likely_cause() {
+        use super::accessibility_remedy;
+        assert_eq!(accessibility_remedy(None), None);
+        let refused = accessibility_remedy(Some(
+            "Failed to connect to address `unix:path=/run/user/1000/at-spi/bus_0`: Connection refused (os error 111)",
+        ))
+        .unwrap();
+        assert!(refused.contains("systemctl --user restart at-spi-dbus-bus.service"));
+        let missing = accessibility_remedy(Some(
+            "org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files",
+        ))
+        .unwrap();
+        assert!(missing.contains("at-spi2-core"));
+        assert!(
+            accessibility_remedy(Some("DBUS_SESSION_BUS_ADDRESS is not set"))
+                .unwrap()
+                .contains("D-Bus")
+        );
+    }
+
+    #[test]
     fn every_backend_belongs_to_a_known_target() {
         for (backend, target) in BACKEND_TARGETS {
             assert!(TARGETS.contains(target), "{backend} -> {target}");
