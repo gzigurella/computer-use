@@ -70,6 +70,8 @@ Set `COMPUTER_USE_LINUX_BINARY` in the MCP entry's `env` table (`env` in `.mcp.j
 
 ## Verify
 
+`scripts/mcp-conformance.py` needs no desktop or Python packages. It checks the stdio server against the MCP schema rules that real clients such as Claude Code enforce: JSON-RPC framing, `initialize` version negotiation and instructions, tool definitions, and well-formed `content` and `structuredContent` in every tool result, including errors. All smoke clients share the same strict validator (`scripts/mcp_result.py`), so they fail on replies a real client would reject.
+
 Run the unit tests, the X11 smoke test on a disposable X server, and the Wayland
 smoke test inside a headless Sway session. The smoke tests check capture, input,
 and session cleanup. The X11 smoke test uses GTK4 to verify click, keyboard,
@@ -108,6 +110,7 @@ runs both exercise live us/de/fr/it layout refresh; the GNU build uses the
 
 ```sh
 cargo test --locked --bin computer-use-linux
+python3 scripts/mcp-conformance.py target/release/computer-use-linux
 dbus-run-session -- cargo test --locked --all-features --bin computer-use-linux
 cargo build --locked --release --features backend-x11,backend-sway,backend-portal --bin computer-use-linux
 xvfb-run --auto-servernum --server-args='-screen 0 1920x1080x24' \

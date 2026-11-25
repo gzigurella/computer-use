@@ -14,13 +14,14 @@ import tempfile
 import time
 from pathlib import Path
 
+from mcp_result import validate_tool_result
+
 POINTER_OVERLAY_SIZE = 12
 POINTER_HOTSPOT = (1, 1)
 
 
 def structured(result):
-    if "content" not in result and "structuredContent" not in result:
-        return result
+    validate_tool_result(result)
     value = result.get("structuredContent")
     if isinstance(value, dict):
         return value

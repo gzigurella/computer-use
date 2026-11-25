@@ -8,6 +8,8 @@ import selectors
 import subprocess
 import time
 
+from mcp_result import validate_tool_result
+
 
 class McpProcess:
     def __init__(self, binary):
@@ -52,11 +54,10 @@ class McpProcess:
         result = self.rpc(
             "tools/call", {"name": name, "arguments": arguments}, timeout=timeout
         )
+        validate_tool_result(result)
         if result.get("isError"):
             detail = result.get("content", [{}])[0].get("text", "unknown error")
             raise RuntimeError(f"{name} failed: {detail}")
-        if "content" not in result and "structuredContent" not in result:
-            return result, result
         structured = result.get("structuredContent")
         if isinstance(structured, dict):
             return result, structured

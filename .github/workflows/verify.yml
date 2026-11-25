@@ -32,6 +32,10 @@ jobs:
         run: dbus-run-session -- cargo test --locked --all-features --bin computer-use-linux
       - name: Check the default Hyprland-only build
         run: cargo check --locked --bin computer-use-linux
+      - name: Check MCP protocol conformance of the default build
+        run: |
+          cargo build --locked --bin computer-use-linux
+          python3 scripts/mcp-conformance.py target/debug/computer-use-linux
       - name: Build release server with experimental backends for smoke tests
         run: cargo build --locked --release --features backend-x11,backend-sway,backend-portal --bin computer-use-linux
       - name: Exercise X11 capture and input under Xvfb
@@ -59,6 +63,8 @@ jobs:
             echo "static release has an ELF interpreter"
             exit 1
           fi
+      - name: Check MCP protocol conformance of the static release
+        run: python3 scripts/mcp-conformance.py target/x86_64-unknown-linux-musl/release/computer-use-linux
       - name: Exercise static Hyprland path with mixed-scale output
         run: dbus-run-session -- bash scripts/hyprland-ci.sh target/x86_64-unknown-linux-musl/release/computer-use-linux
       - name: Exercise Qt 6 accessibility and input on static Hyprland path

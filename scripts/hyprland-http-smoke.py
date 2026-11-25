@@ -12,6 +12,8 @@ import sys
 import time
 from pathlib import Path
 
+from mcp_result import validate_tool_result
+
 
 class McpHttpProcess:
     def __init__(self, binary):
@@ -94,13 +96,12 @@ class McpHttpProcess:
 
     def tool(self, name, arguments=None):
         result = self.rpc("tools/call", {"name": name, "arguments": arguments or {}})
+        validate_tool_result(result)
         if result.get("isError"):
             raise RuntimeError(f"{name} failed: {result.get('content')}")
         structured = result.get("structuredContent")
         if isinstance(structured, dict):
             return structured
-        if "content" not in result and isinstance(result, dict):
-            return result
         for item in result.get("content", []):
             if item.get("type") == "text":
                 try:

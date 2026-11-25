@@ -12,6 +12,8 @@ import subprocess
 import tempfile
 import time
 
+from mcp_result import validate_tool_result
+
 
 class Client:
     def __init__(self, executable):
@@ -42,6 +44,8 @@ class Client:
                     if "error" in response:
                         raise RuntimeError(response["error"].get("message", "MCP request failed"))
                     result = response.get("result", {})
+                    if method == "tools/call":
+                        validate_tool_result(result)
                     if result.get("isError"):
                         details = result.get("structuredContent", {})
                         raise RuntimeError(str(details or result.get("content")))
