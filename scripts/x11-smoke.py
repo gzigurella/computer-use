@@ -214,13 +214,15 @@ def main():
 
             actions = (
                 {"type": "click", "x": 150, "y": target_y},
-                {"type": "keypress", "key": "F24"},
+                {"type": "keypress", "key": "F12"},
                 {"type": "type", "text": "clear-this-with-ctrl-a"},
                 {"type": "keypress", "keys": ["CTRL", "A"]},
                 {"type": "type", "text": "computer-use-linux-x11"},
                 {"type": "keypress", "key": "ENTER"},
                 {"type": "scroll", "x": 480, "y": target_y, "scroll_y": 120},
-                {"type": "drag", "x": 280, "y": target_y, "to_x": 500, "to_y": target_y},
+                # The receiver's top half holds the entry and button; the selectable
+                # TextView fills the bottom half of its 600x400 window at (0, 0).
+                {"type": "drag", "x": 280, "y": 300, "to_x": 500, "to_y": 300},
             )
             for action in actions:
                 result = mcp.call(
@@ -231,7 +233,7 @@ def main():
                 assert structured_content(result).get("performed") is True, (action, result)
 
             wait_for_event(event_log, receiver, lambda event: event.get("text") == "computer-use-linux-x11")
-            wait_for_event(event_log, receiver, lambda event: event.get("key") == "F24")
+            wait_for_event(event_log, receiver, lambda event: event.get("key") == "F12")
             wait_for_event(event_log, receiver, lambda event: event.get("key") == "Return")
             wait_for_event(event_log, receiver, lambda event: event.get("scroll", [0, 0])[1] != 0)
             wait_for_event(event_log, receiver, lambda event: bool(event.get("selection")))

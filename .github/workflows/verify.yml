@@ -61,13 +61,11 @@ jobs:
           python3 scripts/mcp-conformance.py "$binary"
 
   # The experimental X11 and Sway backends run headless (Xvfb, headless Sway), so
-  # their smoke tests run here, but they report without blocking: the experimental
-  # backends are not supported. Hyprland needs a GPU render node, which GitHub's
+  # their smoke tests run here. Hyprland needs a GPU render node, which GitHub's
   # runners lack, so its smoke tests run locally (see README, Verify).
   experimental-backends:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

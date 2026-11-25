@@ -310,12 +310,14 @@ def main():
                     {"type": "type", "text": typed_text},
                     {"type": "keypress", "key": "ENTER"},
                     {"type": "scroll", "x": target_x, "y": target_y, "scroll_y": 120},
+                    # The entry and button fill the receiver's top half; the
+                    # selectable TextView fills the bottom half.
                     {
                         "type": "drag",
                         "x": rect["x"] + 270,
-                        "y": rect["y"] + rect["height"] // 2,
+                        "y": rect["y"] + rect["height"] * 3 // 4,
                         "to_x": rect["x"] + 500,
-                        "to_y": rect["y"] + rect["height"] // 2,
+                        "to_y": rect["y"] + rect["height"] * 3 // 4,
                     },
                 ):
                     result = mcp.call(

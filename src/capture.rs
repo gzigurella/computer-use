@@ -448,7 +448,6 @@ pub(crate) fn grim_image(
     max_dimension: u32,
     pointer_overlay: Option<(u32, u32, u32, u32, f64)>,
 ) -> Result<Vec<u8>, String> {
-    let mut command = limited_command("4s", "grim");
     let scale = logical_size
         .map(|(width, height)| {
             (f64::from(max_dimension) / width.max(height).max(1) as f64)
@@ -456,34 +455,21 @@ pub(crate) fn grim_image(
         })
         .unwrap_or_else(|| (f64::from(max_dimension) / 3200.0).min(1.0));
     let scale = format!("{scale:.6}");
-    command.args(["-s", &scale]);
-    if pointer_overlay.is_some() {
-        command.args(["-t", "ppm"]);
-    } else {
-        command.args(["-t", "jpeg", "-q", &quality.to_string()]);
+    // The server composites its own pointer, so grim draws the cursor only without one.
+    let grim_cursor = cursor_capture && pointer_overlay.is_none();
+    if pointer_overlay.is_none() && !GRIM_JPEG_UNSUPPORTED.load(Ordering::Relaxed) {
+        match run_grim(&scale, output, grim_cursor, Some(quality), MAX_IMAGE) {
+            Err(error) if error.contains(GRIM_NO_JPEG) => {
+                // Some distributions build grim without libjpeg; encode PPM ourselves.
+                GRIM_JPEG_UNSUPPORTED.store(true, Ordering::Relaxed);
+            }
+            result => return result,
+        }
     }
-    if let Some(output) = output {
-        command.args(["-o", output]);
-    }
-    if cursor_capture && pointer_overlay.is_none() {
-        command.arg("-c");
-    }
-    command.arg("-");
-    let (image, status) = bounded_command_output(
-        &mut command,
-        if pointer_overlay.is_some() {
-            64 * 1024 * 1024
-        } else {
-            MAX_IMAGE
-        },
-    )
-    .map_err(|error| format!("grim capture failed: {error}"))?;
-    if !status.success() {
-        return Err(format!("grim capture failed with status {status}"));
-    }
+    let image = run_grim(&scale, output, grim_cursor, None, 64 * 1024 * 1024)?;
+    let (width, height, mut rgb) = compact_ppm_raster(image)?;
     if let Some((cursor_x, cursor_y, logical_width, logical_height, output_scale)) = pointer_overlay
     {
-        let (width, height, mut rgb) = compact_ppm_raster(image)?;
         let scale_x = f64::from(width) / (f64::from(logical_width) * output_scale);
         let scale_y = f64::from(height) / (f64::from(logical_height) * output_scale);
         hyprland_capture::composite_pointer(
@@ -497,22 +483,69 @@ pub(crate) fn grim_image(
             scale_x,
             scale_y,
         )?;
-        let mut jpeg = Vec::new();
-        Encoder::new(&mut jpeg, quality)
-            .encode(
-                &rgb,
-                u16::try_from(width).map_err(|_| "Grim screenshot width exceeds JPEG limits")?,
-                u16::try_from(height).map_err(|_| "Grim screenshot height exceeds JPEG limits")?,
-                ColorType::Rgb,
-            )
-            .map_err(|error| format!("encoding the Grim pointer screenshot: {error}"))?;
-        if jpeg.len() > MAX_IMAGE {
-            return Err(format!("screenshot exceeds {MAX_IMAGE} bytes"));
-        }
-        Ok(jpeg)
-    } else {
-        Ok(image)
     }
+    let mut jpeg = Vec::new();
+    Encoder::new(&mut jpeg, quality)
+        .encode(
+            &rgb,
+            u16::try_from(width).map_err(|_| "Grim screenshot width exceeds JPEG limits")?,
+            u16::try_from(height).map_err(|_| "Grim screenshot height exceeds JPEG limits")?,
+            ColorType::Rgb,
+        )
+        .map_err(|error| format!("encoding the Grim screenshot: {error}"))?;
+    if jpeg.len() > MAX_IMAGE {
+        return Err(format!("screenshot exceeds {MAX_IMAGE} bytes"));
+    }
+    Ok(jpeg)
+}
+
+/// grim's error when it was built without libjpeg.
+const GRIM_NO_JPEG: &str = "jpeg support disabled";
+static GRIM_JPEG_UNSUPPORTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Runs grim once and returns its image: JPEG at `jpeg_quality`, or PPM when `None`.
+/// A failure carries grim's own error output.
+fn run_grim(
+    scale: &str,
+    output: Option<&str>,
+    cursor: bool,
+    jpeg_quality: Option<u8>,
+    max_bytes: usize,
+) -> Result<Vec<u8>, String> {
+    let mut command = limited_command("4s", "grim");
+    command.args(["-s", scale]);
+    match jpeg_quality {
+        Some(quality) => command.args(["-t", "jpeg", "-q", &quality.to_string()]),
+        None => command.args(["-t", "ppm"]),
+    };
+    if let Some(output) = output {
+        command.args(["-o", output]);
+    }
+    if cursor {
+        command.arg("-c");
+    }
+    command.arg("-");
+    let mut child = command
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("grim capture failed: starting capture process: {error}"))?;
+    let pid = child.pid;
+    let stderr = spawn_output_reader(child.stderr.take(), Some(4096));
+    let output = bounded_child_output(child, max_bytes);
+    let stderr = join_output_reader(stderr, pid).unwrap_or_default();
+    let (image, status) = output.map_err(|error| format!("grim capture failed: {error}"))?;
+    if !status.success() {
+        let detail = String::from_utf8_lossy(&stderr[..stderr.len().min(4096)]);
+        let detail = detail.trim();
+        return Err(if detail.is_empty() {
+            format!("grim capture failed with status {status}")
+        } else {
+            format!("grim capture failed with status {status}: {detail}")
+        });
+    }
+    Ok(image)
 }
 
 pub(crate) fn compact_ppm_raster(mut bytes: Vec<u8>) -> Result<(u32, u32, Vec<u8>), String> {
