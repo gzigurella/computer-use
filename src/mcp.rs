@@ -806,14 +806,14 @@ pub(crate) async fn handle_request(
                 .unwrap_or(LATEST_MCP_VERSION),
             "capabilities": {"tools": {"listChanged": false}},
             "serverInfo": {"name": "computer-use-linux", "version": env!("CARGO_PKG_VERSION")},
-            "instructions": SERVER_INSTRUCTIONS
+            "instructions": server_instructions()
         }),
         "server/discover" => json!({
             "resultType":"complete",
             "supportedVersions":MCP_VERSIONS,
             "capabilities":{"tools":{}},
             "_meta":{"io.modelcontextprotocol/serverInfo":{"name":"computer-use-linux","version":env!("CARGO_PKG_VERSION")}},
-            "instructions":SERVER_INSTRUCTIONS,
+            "instructions":server_instructions(),
             "ttlMs":300000,
             "cacheScope":"public"
         }),

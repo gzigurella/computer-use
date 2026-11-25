@@ -9,6 +9,7 @@ Usage: python3 scripts/mcp-conformance.py PATH/TO/computer-use-linux
 """
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,9 +24,10 @@ CLIENT_INFO = {"name": "mcp-conformance", "version": "1"}
 
 
 class Server:
-    def __init__(self, binary):
+    def __init__(self, binary, env=None):
         self.process = subprocess.Popen(
             [binary, "--stdio"],
+            env={**os.environ, **(env or {})},
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL,
@@ -117,6 +119,23 @@ def check_initialize(binary):
             server.close()
 
 
+AUTONOMOUS_WORDING = "do not request or wait for human confirmation"
+
+
+def check_confirmation_policy(binary):
+    for env, expected in [({"COMPUTER_USE_LINUX_AUTONOMOUS": ""}, False), ({"COMPUTER_USE_LINUX_AUTONOMOUS": "1"}, True)]:
+        server = Server(binary, env)
+        try:
+            instructions = server.initialize(NEWEST_LEGACY_VERSION)["instructions"]
+            tools = server.request("tools/list")["result"]["tools"]
+            act = next(tool for tool in tools if tool["name"] == "computer_act")
+            for where, text in [("instructions", instructions), ("computer_act description", act["description"])]:
+                check((AUTONOMOUS_WORDING in text) == expected,
+                      f"{where}: autonomous wording present={not expected} with {env}")
+        finally:
+            server.close()
+
+
 def check_session(binary):
     server = Server(binary)
     try:
@@ -195,6 +214,7 @@ def main():
         ("initialize negotiation", check_initialize),
         ("tools/list and tools/call results", check_session),
         ("modern server/discover", check_modern_discovery),
+        ("confirmation policy opt-in", check_confirmation_policy),
     ]:
         try:
             run(binary)

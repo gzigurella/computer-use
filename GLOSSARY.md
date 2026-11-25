@@ -46,6 +46,10 @@ _Avoid_: Desktop session, connection
 An image of the Selected Output as the agent sees it, including the AI Pointer.
 _Avoid_: Capture, frame (when meaning what the agent sees)
 
+**Image Profile**:
+The size limits a Session's Screenshots are captured within, matched to the model that reads them so that the model's coordinates are Screenshot pixels.
+_Avoid_: Resolution, quality
+
 **Observation**:
 The actionable record of the desktop at one moment: a Screenshot, its geometry, and the Accessible Elements visible in it. Pointer, keyboard and accessibility Actions are checked against it. It is consumed by one Action call, and a newer Observation replaces it.
 _Avoid_: Snapshot, capture, state

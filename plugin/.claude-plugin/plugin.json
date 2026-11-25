@@ -1,0 +1,10 @@
+{
+  "name": "computer-use-linux",
+  "version": "0.1.0",
+  "description": "See and control a Linux desktop (Hyprland on Wayland) through the computer-use-linux MCP server: screenshots, pointer, keyboard, scrolling, clipboard and AT-SPI accessibility.",
+  "author": { "name": "Zigu" },
+  "homepage": "https://github.com/gzigurella/computer-use",
+  "repository": "https://github.com/gzigurella/computer-use",
+  "license": "MIT",
+  "keywords": ["mcp", "computer-use", "linux", "wayland", "hyprland", "desktop"]
+}

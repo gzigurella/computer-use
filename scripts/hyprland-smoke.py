@@ -4,6 +4,7 @@
 import base64
 import argparse
 import json
+import math
 import os
 import selectors
 import signal
@@ -771,8 +772,11 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
                 target_monitor["x"], target_monitor["y"], expected_logical_width, expected_logical_height
             ):
                 raise RuntimeError(f"capture was not scoped to selected output {target_monitor['name']}: {display}")
-            if high_resolution_output and max(display["width"], display["height"]) != 3200:
-                raise RuntimeError(f"high-resolution capture was not downsampled to 3200 pixels: monitor={target_monitor}; display={display}")
+            if high_resolution_output and (
+                max(display["width"], display["height"]) != 2576
+                or math.ceil(display["width"] / 28) * math.ceil(display["height"] / 28) > 4784
+            ):
+                raise RuntimeError(f"high-resolution capture does not fit the default high-resolution image profile (2576 px, 4784 visual tokens): monitor={target_monitor}; display={display}")
             if not metadata.get("capabilities", {}).get("visual_pointer_overlay"):
                 raise RuntimeError(f"native mouse-arrow overlay is unavailable: {metadata.get('capabilities')}")
             initial_pointer = json.loads(subprocess.check_output(["hyprctl", "cursorpos", "-j"], text=True))
@@ -1520,7 +1524,7 @@ def run(binary, headless_output=False, qt_receiver=False, xkb_fallback=False, hi
             if headless_output:
                 layout_result += ", live output scale changes"
             if high_resolution_output:
-                layout_result += f", 3840-pixel capture downsampled to 3200, output format {virtual_output.get('currentFormat', 'unknown')}"
+                layout_result += f", 3840-pixel capture fitted to the 2576-pixel high-resolution image profile, output format {virtual_output.get('currentFormat', 'unknown')}"
             if xkb_layout_matrix:
                 layout_result += f", live XKB layout refresh {'→'.join(xkb_layout_matrix)}"
             layout_result += xkb_layout_result

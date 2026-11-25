@@ -10,7 +10,7 @@ pub(crate) async fn screenshot_only(
     legacy_action: bool,
 ) -> Result<Value, String> {
     await_held_input_cleanups().await;
-    let (backend, composite_pointer_overlay, observation_id) = {
+    let (backend, composite_pointer_overlay, observation_id, image_limits) = {
         let guard = state.lock().await;
         let session = guard.session.as_ref().ok_or("no desktop session is open")?;
         if session.id != session_id {
@@ -25,13 +25,15 @@ pub(crate) async fn screenshot_only(
             session.backend.clone(),
             session.pointer_overlay.is_some(),
             observation_id,
+            session.image_limits,
         )
     };
     let capture_backend = backend.clone();
-    let frame =
-        tokio::task::spawn_blocking(move || capture(&capture_backend, composite_pointer_overlay))
-            .await
-            .map_err(|error| format!("capture worker failed: {error}"))??;
+    let frame = tokio::task::spawn_blocking(move || {
+        capture(&capture_backend, composite_pointer_overlay, image_limits)
+    })
+    .await
+    .map_err(|error| format!("capture worker failed: {error}"))??;
     if frame.image.len() > MAX_IMAGE {
         return Err("screenshot exceeds 3 MiB".into());
     }

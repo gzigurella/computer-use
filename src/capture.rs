@@ -28,18 +28,157 @@ pub(crate) struct CapturedFrame {
     pub(crate) layout: Option<(i32, i32, u32, u32)>,
 }
 
+/// Size limits for the Screenshots a Session returns.
+///
+/// Claude reports coordinates in the image it processes, after the API downsizes anything
+/// beyond the model's limits. Capturing within those limits keeps the model's coordinates
+/// identical to screenshot pixels. The rules follow
+/// <https://platform.claude.com/docs/en/build-with-claude/vision-coordinates>.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ImageLimits {
+    pub(crate) profile: &'static str,
+    pub(crate) max_edge: u32,
+    /// Maximum visual tokens, one per 28×28 patch; `None` disables the token rule.
+    pub(crate) max_tokens: Option<u32>,
+}
+
+pub(crate) const IMAGE_PROFILES: &[ImageLimits] = &[
+    ImageLimits {
+        profile: "high-resolution",
+        max_edge: 2576,
+        max_tokens: Some(4784),
+    },
+    ImageLimits {
+        profile: "standard",
+        max_edge: 1568,
+        max_tokens: Some(1568),
+    },
+    ImageLimits {
+        profile: "full",
+        max_edge: 3200,
+        max_tokens: None,
+    },
+];
+pub(crate) const IMAGE_PROFILE_ENV: &str = "COMPUTER_USE_LINUX_IMAGE_PROFILE";
+const PATCH: u32 = 28;
+
+impl ImageLimits {
+    pub(crate) fn named(profile: &str) -> Option<Self> {
+        IMAGE_PROFILES
+            .iter()
+            .copied()
+            .find(|limits| limits.profile == profile)
+    }
+
+    /// The `image_profile` argument, else the environment default, else high-resolution.
+    pub(crate) fn from_request(args: &Value) -> Result<Self, String> {
+        let names = || {
+            IMAGE_PROFILES
+                .iter()
+                .map(|limits| limits.profile)
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        match args.get("image_profile") {
+            None | Some(Value::Null) => {}
+            Some(Value::String(name)) => {
+                return Self::named(name)
+                    .ok_or_else(|| format!("image_profile must be one of {}", names()));
+            }
+            Some(_) => return Err("image_profile must be a string".into()),
+        }
+        match std::env::var(IMAGE_PROFILE_ENV) {
+            Ok(name) if !name.is_empty() => Self::named(&name)
+                .ok_or_else(|| format!("{IMAGE_PROFILE_ENV} must be one of {}", names())),
+            _ => Ok(IMAGE_PROFILES[0]),
+        }
+    }
+
+    pub(crate) fn fits(&self, width: u32, height: u32) -> bool {
+        let Some(tokens) = self.max_tokens else {
+            // Not a model profile: a plain pixel cap.
+            return width <= self.max_edge && height <= self.max_edge;
+        };
+        let patches = |side: u32| side.div_ceil(PATCH);
+        patches(width) * PATCH <= self.max_edge
+            && patches(height) * PATCH <= self.max_edge
+            && patches(width) * patches(height) <= tokens
+    }
+
+    /// The largest long edge at this aspect ratio that fits, leaving one pixel of
+    /// rounding slack on the short edge for the capture backends' own scaling.
+    pub(crate) fn fitted_long_edge(&self, width: u32, height: u32) -> u32 {
+        let (long, short) = (width.max(height).max(1), width.min(height).max(1));
+        let fits = |candidate: u32| {
+            let other =
+                ((f64::from(candidate) * f64::from(short) / f64::from(long)).round() as u32).max(1);
+            self.fits(candidate, other + 1)
+        };
+        let (mut lo, mut hi) = (1, long.min(self.max_edge) + 1);
+        if fits(hi - 1) {
+            return hi - 1;
+        }
+        while lo + 1 < hi {
+            let mid = (lo + hi) / 2;
+            if fits(mid) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    }
+
+    pub(crate) fn describe(&self) -> Value {
+        json!({"profile":self.profile,"max_edge":self.max_edge,"max_visual_tokens":self.max_tokens,"coordinate_space":"screenshot pixels match the pixels the model sees"})
+    }
+}
+
 pub(crate) fn capture(
     backend: &Backend,
     composite_pointer_overlay: bool,
+    limits: ImageLimits,
+) -> Result<CapturedFrame, String> {
+    let caps = [3200, 2560, 2048]
+        .into_iter()
+        .map(|cap: u32| cap.min(limits.max_edge))
+        .fold(Vec::new(), |mut caps, cap| {
+            if !caps.contains(&cap) {
+                caps.push(cap);
+            }
+            caps
+        });
+    let frame = capture_within(backend, composite_pointer_overlay, &caps)?;
+    if limits.fits(frame.pixel_width, frame.pixel_height) {
+        return Ok(frame);
+    }
+    let long_edge = limits.fitted_long_edge(frame.pixel_width, frame.pixel_height);
+    let frame = capture_within(backend, composite_pointer_overlay, &[long_edge])?;
+    if limits.fits(frame.pixel_width, frame.pixel_height) {
+        Ok(frame)
+    } else {
+        Err(format!(
+            "capture backend returned {}x{}, which exceeds the {} image profile",
+            frame.pixel_width, frame.pixel_height, limits.profile
+        ))
+    }
+}
+
+fn capture_within(
+    backend: &Backend,
+    composite_pointer_overlay: bool,
+    caps: &[u32],
 ) -> Result<CapturedFrame, String> {
     let mut captured = None;
     let mut size_error = String::new();
     let mut frame_error = None;
-    for max_dimension in [3200, 2560, 2048] {
-        let qualities: &[u8] = match max_dimension {
-            3200 => &[85, 60, 35],
-            2560 => &[85],
-            _ => &[85, 35],
+    for max_dimension in caps.iter().copied() {
+        let qualities: &[u8] = if max_dimension == caps[0] {
+            &[85, 60, 35]
+        } else if max_dimension > 2048 {
+            &[85]
+        } else {
+            &[85, 35]
         };
         for quality in qualities.iter().copied() {
             let attempt = match backend {

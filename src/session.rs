@@ -113,6 +113,7 @@ pub(crate) async fn start_session(args: &Value, state: SharedState) -> Result<Va
         _ => {}
     }
     let requested_output = requested_output(args)?;
+    let image_limits = ImageLimits::from_request(args)?;
     let mut notes = info["notes"].clone();
     let hyprland_monitor = if info["capabilities"]["hyprland_adapter"] == true {
         Some(hyprland_overlay::select_monitor(requested_output)?)
@@ -675,12 +676,14 @@ pub(crate) async fn start_session(args: &Value, state: SharedState) -> Result<Va
         observation: None,
         pointer_overlay,
         pointer_overlay_monitor: pointer_overlay_monitor.clone(),
+        image_limits,
     });
     let mut rollback = SessionStartRollback::new(state.clone(), id.clone());
     capabilities["visual_pointer_overlay"] = json!(pointer_overlay_monitor.is_some());
     capabilities["native_cursor_hidden"] = json!(native_cursor_hidden);
     let mut session_info = json!({"session_id":id,"wayland_mode":wayland_mode,"active_backend":active_backend,"active_target":active_target,"capture_validated":true,"capabilities":capabilities,"notes":notes});
     session_info["selected_output"] = json!(selected_output);
+    session_info["image_limits"] = image_limits.describe();
     drop(guard);
     match observe(&json!({"session_id":id}), state.clone()).await {
         Ok(mut initial_observation) => {
@@ -799,7 +802,7 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
     let action_lock = state.lock().await.action_lock.clone();
     let _action_guard = action_lock.lock().await;
     await_held_input_cleanups().await;
-    let (backend, pointer_overlay, pointer_overlay_monitor) = {
+    let (backend, pointer_overlay, pointer_overlay_monitor, image_limits) = {
         let mut guard = state.lock().await;
         let session = guard.session.as_mut().ok_or("no desktop session is open")?;
         if session.id != id {
@@ -810,6 +813,7 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
             session.backend.clone(),
             session.pointer_overlay.clone(),
             session.pointer_overlay_monitor.clone(),
+            session.image_limits,
         )
     };
     let captured_at = std::time::Instant::now();
@@ -821,8 +825,9 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
         .flatten();
     let capture_backend = backend.clone();
     let composite_pointer_overlay = pointer_overlay.is_some();
-    let capture =
-        tokio::task::spawn_blocking(move || capture(&capture_backend, composite_pointer_overlay));
+    let capture = tokio::task::spawn_blocking(move || {
+        capture(&capture_backend, composite_pointer_overlay, image_limits)
+    });
     let accessibility = tokio::task::spawn_blocking(accessibility_snapshot);
     let (capture, accessibility) = tokio::join!(capture, accessibility);
     let capture = match capture {
@@ -977,7 +982,7 @@ pub(crate) async fn observe(args: &Value, state: SharedState) -> Result<Value, S
     let mut metadata = json!({
         "session_id":id,
         "observation_id":observation_id,
-        "display":{"width":width,"height":height,"logical_width":logical_width,"logical_height":logical_height,"coordinate_space":"captured output pixels","origin_x":origin_x,"origin_y":origin_y,"origin_known":origin_known,"source":observation.source,"pointer":observation.pointer.map(|(x,y)|json!({"x":x,"y":y,"coordinate_space":"captured output pixels"}))},
+        "display":{"width":width,"height":height,"image_profile":image_limits.profile,"logical_width":logical_width,"logical_height":logical_height,"coordinate_space":"captured output pixels","origin_x":origin_x,"origin_y":origin_y,"origin_known":origin_known,"source":observation.source,"pointer":observation.pointer.map(|(x,y)|json!({"x":x,"y":y,"coordinate_space":"captured output pixels"}))},
         "active_window":visible_active_window,
         "accessibility_actions_available":snapshot["available"] == true && origin_known && accessibility_mapping.unmapped_process.is_none(),
         "accessibility_actions_reason":accessibility_actions_reason,
