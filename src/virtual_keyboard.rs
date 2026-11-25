@@ -1877,6 +1877,7 @@ xkb_symbols "test" { key <ESC> { [ Escape ] }; };
     }
 
     #[test]
+    #[ignore = "reads the live Hyprland keymap; run inside Hyprland with: cargo test -- --ignored"]
     fn compositor_keymap_maps_named_keys_for_the_active_layout() {
         let (Ok(settings), Ok(compositor_keymap)) =
             (current_hyprland_xkb_settings(), current_wayland_keymap())

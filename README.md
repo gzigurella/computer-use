@@ -162,6 +162,8 @@ runs both exercise live us/de/fr/it layout refresh; the GNU build uses the
 
 ```sh
 cargo test --locked --bin computer-use-linux
+# Inside a Hyprland session, also run the tests that read the live compositor:
+cargo test --locked --bin computer-use-linux -- --ignored
 python3 scripts/mcp-conformance.py target/release/computer-use-linux
 dbus-run-session -- cargo test --locked --all-features --bin computer-use-linux
 cargo build --locked --release --features backend-x11,backend-sway,backend-portal --bin computer-use-linux
