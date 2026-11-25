@@ -1,6 +1,8 @@
 #![allow(unsafe_code)]
 
 mod accessibility;
+mod accessibility_view;
+mod action_args;
 mod actions;
 mod bundled_xkb;
 mod capture;
@@ -10,6 +12,7 @@ mod eis;
 mod hyprland_capture;
 mod hyprland_ipc;
 mod hyprland_overlay;
+mod input;
 mod layout;
 mod mcp;
 #[cfg(feature = "backend-portal")]
@@ -38,10 +41,13 @@ mod x11;
 #[cfg(not(feature = "backend-x11"))]
 #[path = "x11_stub.rs"]
 mod x11;
+use accessibility_view::*;
+use action_args::*;
 use actions::*;
 use capture::*;
 use clipboard::*;
 use hyprland_ipc::*;
+use input::*;
 use layout::*;
 use mcp::*;
 use process::*;

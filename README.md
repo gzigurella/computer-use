@@ -125,7 +125,10 @@ GTK and Qt 6 applications expose their tree once the bus is enabled. Chromium an
 | `tools.rs` | MCP tool definitions and dispatch |
 | `status.rs` | `computer_status` probing of the Login Session |
 | `session.rs` | `computer_start`, `computer_stop`, `computer_observe` |
-| `actions.rs` | `computer_act` validation and pointer, keyboard, scroll and accessibility input |
+| `accessibility_view.rs` | Compact and full accessibility views, and AT-SPI bounds mapped into screenshot pixels |
+| `actions.rs` | `computer_act`: observation checks and dispatch of each Action |
+| `action_args.rs` | Parsing and validating Action arguments, independent of any Backend |
+| `input.rs` | Pointer and keyboard input on each Backend, and key name resolution |
 | `capture.rs` | Screenshot capture per Backend |
 | `layout.rs` | Output geometry, pointer position, active window |
 | `process.rs` | Supervised helper processes with deadlines |
